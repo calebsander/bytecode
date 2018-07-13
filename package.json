@@ -1,0 +1,16 @@
+{
+	"name": "bytecode",
+	"version": "1.0.0",
+	"description": "Decompile Java ByteCode",
+	"main": "main.js",
+	"dependencies": {
+		"@types/node": "^9.4.6",
+		"typescript": "^2.9.2"
+	},
+	"scripts": {
+		"build": "tsc",
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"author": "Caleb Sander",
+	"license": "MIT"
+}

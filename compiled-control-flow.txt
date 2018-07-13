@@ -1,0 +1,50 @@
+if:
+	If !condition goto END
+	... if block
+	END:
+
+if-else: -> there is an else block if there is a GOTO directly before the jump offset
+	If !condition goto ELSE
+	... if block
+	Goto END
+	ELSE:
+	... else block
+	END:
+
+doWhile:
+	START: <-- continue
+	... do block
+	If condition goto START
+	END: <-- break
+
+while:
+	START:
+	If !condition goto END
+	... while block
+	goto START
+	END:
+
+	// should hopefully get parsed as
+	do {
+		if (!condition) break;
+		...
+	} while (true);
+
+and:
+	If !cond1 goto FALSE
+	If !cond2 goto FALSE
+	push 1
+	Goto END
+	FALSE:
+	push 0
+	END:
+
+or:
+	If cond1 goto TRUE
+	If !cond2 goto FALSE
+	TRUE:
+	push 1
+	Goto END
+	FALSE:
+	push 0
+	END:

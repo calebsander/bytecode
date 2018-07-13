@@ -1,0 +1,19 @@
+Find out whether loop label is ever actually used
+
+Identify constructor calls this(...) and super(...)
+
+Generate .java files
+
+Replace .../.../.../Abc with Abc, record it to be imported unless java.lang.*
+
+Support try-catch
+
+Identify new ...[]{...} expressions, e.g.:
+new int[3][0] = 1;
+new int[3][1] = 2;
+new int[3][2] = 3;
+var3 = new int[3];
+
+Taint expressions with types - should be able to distinguish int/long/float/double based on load/store operations
+Find how ints are being used - boolean/short/int/char by function definitions?
+If boolean is identified, expressions must be revised so as to use true/false instead of 0/1
