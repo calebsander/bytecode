@@ -274,6 +274,8 @@ class DConst extends Operation {
 class DAdd extends AddOperation {}
 class DALoad extends ArrayLoadOperation {}
 class DAStore extends ArrayStoreOperation {}
+class DCmpL extends SubOperation {} //not sure how to distinguish how they deal with NaN
+class DCmpG extends SubOperation {}
 class DDiv extends DivOperation {}
 class DLoad extends LocalLoadOperation {
 	get doubleWidth() { return true }
@@ -296,6 +298,8 @@ class F2L extends LongCast {}
 class FAdd extends AddOperation {}
 class FALoad extends ArrayLoadOperation {}
 class FAStore extends ArrayStoreOperation {}
+class FCmpL extends SubOperation {} //not sure how to distinguish how they deal with NaN
+class FCmpG extends SubOperation {}
 class FConst extends Operation {
 	constructor(public readonly f: number) { super() }
 	execute(stack: Stack) {
@@ -530,6 +534,9 @@ class IfNe extends If {
 }
 class IfGe extends If {
 	get jumpOp(): BinaryOp { return '>=' }
+}
+class IfLe extends If {
+	get jumpOp(): BinaryOp { return '<=' }
 }
 export class Goto extends Jump {
 	constructor(public readonly offset: number) { super() }
@@ -1040,6 +1047,18 @@ export const bytecodeParser: (constantPool: ConstantPool, isStatic: boolean) => 
 				case 0x94:
 					instruction = new LCmp
 					break
+				case 0x95:
+					instruction = new FCmpL
+					break
+				case 0x96:
+					instruction = new FCmpG
+					break
+				case 0x97:
+					instruction = new DCmpL
+					break
+				case 0x98:
+					instruction = new DCmpG
+					break
 				case 0x99:
 					({instruction, newOffset} = jumpOperation(data, offset, IfEq))
 					break
@@ -1048,6 +1067,9 @@ export const bytecodeParser: (constantPool: ConstantPool, isStatic: boolean) => 
 					break
 				case 0x9c:
 					({instruction, newOffset} = jumpOperation(data, offset, IfGe))
+					break
+				case 0x9e:
+					({instruction, newOffset} = jumpOperation(data, offset, IfLe))
 					break
 				case 0xa2:
 					({instruction, newOffset} = jumpOperation(data, offset, IfICmpGe))

@@ -146,4 +146,14 @@ public class CodeTest {
 		long l1 = 1, l2 = 2;
 		return l1 < l2 ? l1 : l2;
 	}
+	public float floatCmp(float f) {
+		if (f < 0) return -1;
+		if (f > 0) return 1;
+		return 0;
+	}
+	public double doubleCmp(double d) {
+		if (d < 0) return -1;
+		if (d > 0) return 1;
+		return 0;
+	}
 }
