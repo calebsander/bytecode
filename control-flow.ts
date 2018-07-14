@@ -46,7 +46,6 @@ export function parseControlFlow(
 	stack: Stack = [],
 	block: Block = []
 ): Block {
-	console.log(start, end, breaks, continues)
 	const getBreak = (index: number) => {
 		const {instruction} = instructions.get(index)!
 		if (instruction instanceof Goto || instruction instanceof If) {

@@ -1,5 +1,3 @@
-Find out whether loop label is ever actually used
-
 Identify constructor calls this(...) and super(...)
 
 Generate .java files

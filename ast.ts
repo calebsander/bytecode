@@ -509,7 +509,16 @@ export class WhileStatement extends Statement {
 	}
 	toSections() {
 		const blockSections = blockToSections(this.block, this.label)
-		const labelNeeded = true //TODO: figure out if label is actually needed
+		let labelNeeded = false
+		this.walkStatements(statement => { //look for break/continue referencing this loop inside a different loop
+			if (statement instanceof WhileStatement && statement !== this) {
+				statement.walkStatements(statement => {
+					if (statement instanceof BreakStatement || statement instanceof ContinueStatement) {
+						if (statement.loop === this.label) labelNeeded = true
+					}
+				})
+			}
+		})
 		const labelString = labelNeeded ? this.label.label + ': ' : ''
 		const whileCond = 'while (' + this.cond.toString(true) + ')'
 		if (this.doWhile) {

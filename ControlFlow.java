@@ -75,23 +75,26 @@ class ControlFlow {
 	public void nestedLoops() {
 		boolean b = true;
 		int a = 0;
-		// loop1: while (b) {
-		// 	a = 1;
-		// 	loop2: while (!b) {
-		// 		a = 2;
-		// 		break loop1;
-		// 	}
-		// 	a = 3;
-		// }
-		loop3: while (b) {
-			a = 4;
-			loop4: while (!b) {
-				a = 5;
-				if (b) continue loop4;
-				a = 6;
-				continue loop3;
+		loop1: while (b) {
+			a = 1;
+			loop2: while (!b) {
+				a = 2;
+				if (b) break loop1;
+				a = 3;
 			}
-			a = 7;
+			a = 4;
 		}
+		loop3: while (b) {
+			a = 5;
+			loop4: while (!b) {
+				a = 6;
+				if (b) continue loop4;
+				a = 7;
+				if (b) continue loop3;
+				a = 8;
+			}
+			a = 9;
+		}
+		a = 10;
 	}
 }
