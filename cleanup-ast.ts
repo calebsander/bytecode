@@ -5,11 +5,14 @@ import {
 	BooleanLiteral,
 	BreakStatement,
 	Cast,
+	ClassReference,
 	ContinueStatement,
 	Expression,
 	ExpressionHandler,
 	IfStatement,
 	IntegerLiteral,
+	NewArray,
+	NewObject,
 	replaceBlock,
 	Replacements,
 	ReturnStatement,
@@ -133,9 +136,9 @@ const avoidDoubleCast: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
 	walkBlockExpressions(block, expression => {
 		if (expression instanceof Cast) {
-			const {type, exp} = expression
+			const {type, exp, primitive} = expression
 			if (exp instanceof Cast) {
-				replacements.set(expression, new Cast(type, exp.exp))
+				replacements.set(expression, new Cast(type, exp.exp, primitive))
 			}
 		}
 	})
@@ -296,4 +299,43 @@ export function cleanup(block: Block): Block {
 		}
 	} while (someReplaced)
 	return block
+}
+//Replaces, e.g. java/util/ArrayList with ArrayList
+export function resolvePackageClasses(block: Block, imports: Set<string>): Block {
+	function convertClassString(clazz: string) {
+		const dotString = clazz.replace(/\//g, '.')
+		if (!dotString.startsWith('java.lang.')) imports.add(dotString)
+		const [clazzName] = dotString.split('.').slice(-1)
+		return clazzName
+	}
+	const replacements = new Map<Expression, Expression>()
+	walkBlockExpressions(block, expression => {
+		if (expression instanceof ClassReference) {
+			replacements.set(expression, new ClassReference({
+				name: convertClassString(expression.clazz.name)
+			}))
+		}
+		else if (expression instanceof NewObject) {
+			const replacedExpression = new NewObject({
+				name: convertClassString(expression.clazz.name)
+			})
+			replacedExpression.args = expression.args
+			replacements.set(expression, replacedExpression)
+		}
+		else if (expression instanceof NewArray && !expression.primitive) {
+			replacements.set(expression, new NewArray(
+				{name: convertClassString(expression.type.name)},
+				expression.length,
+				expression.primitive
+			))
+		}
+		else if (expression instanceof Cast && !expression.primitive) {
+			replacements.set(expression, new Cast(
+				{name: convertClassString(expression.type.name)},
+				expression.exp,
+				expression.primitive
+			))
+		}
+	})
+	return replaceBlock(block, {expressions: replacements, statements: new Map})
 }

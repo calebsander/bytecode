@@ -4,7 +4,7 @@ import {AccessFlags, accessFlagsParser} from './access-flags-parser'
 import {blockToString} from './ast'
 import {Attribute, attributesParser} from './attributes-parser'
 import {Code} from './bytecode-parser'
-import {cleanup} from './cleanup-ast'
+import {cleanup, resolvePackageClasses} from './cleanup-ast'
 import {constantParser} from './constant-parser'
 import {ConstantPool, Class, constantPoolParser} from './constant-pool-parser'
 import {parseControlFlow} from './control-flow'
@@ -52,8 +52,10 @@ export const classFileParser: Parser<ClassFile> =
 					const block = parseControlFlow(instructions)
 					//console.log(blockToString(block))
 					const cleanedBlock = cleanup(block)
-					console.log(blockToString(cleanedBlock))
-					// console.log(inspect(cleanup(parseControlFlow(instructions)), false, Infinity))
+					const imports = new Set<string>()
+					const importResolvedBlock = resolvePackageClasses(cleanedBlock, imports)
+					for (const importClass of imports) console.log(`import ${importClass};`)
+					console.log(blockToString(importResolvedBlock))
 					console.log()
 				}
 			}

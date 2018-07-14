@@ -141,8 +141,9 @@ abstract class InvokeOperation extends Operation {
 }
 abstract class NewArrayOperation extends Operation {
 	abstract readonly name: string
+	abstract readonly primitive: boolean
 	execute(stack: Stack) {
-		stack.push(new NewArray(this, forcePop(stack)))
+		stack.push(new NewArray(this, forcePop(stack), this.primitive))
 	}
 }
 abstract class BinaryOpOperation extends Operation {
@@ -198,7 +199,7 @@ abstract class NegOperation extends UnaryOpOperation {
 abstract class PrimitiveCast extends Operation {
 	abstract readonly target: Primitive
 	execute(stack: Stack) {
-		stack.push(new Cast({name: this.target}, forcePop(stack)))
+		stack.push(new Cast({name: this.target}, forcePop(stack), true))
 	}
 }
 abstract class IntCast extends PrimitiveCast {
@@ -229,9 +230,8 @@ class ALoad extends LocalLoadOperation {
 }
 class ANewArray extends NewArrayOperation {
 	constructor(public readonly clazz: Class) { super() }
-	get name() {
-		return this.clazz.name
-	}
+	get name() { return this.clazz.name }
+	get primitive() { return false }
 }
 class AReturn extends ReturnOperation {}
 class ArrayLength extends Operation {
@@ -259,7 +259,7 @@ class CAStore extends ArrayStoreOperation {}
 class CheckCast extends Operation {
 	constructor(public readonly clazz: Class) { super() }
 	execute(stack: Stack) {
-		stack.push(new Cast(this.clazz, forcePop(stack)))
+		stack.push(new Cast(this.clazz, forcePop(stack), false))
 	}
 }
 class D2F extends FloatCast {}
@@ -456,6 +456,7 @@ type Primitive
 	| 'long'
 class NewPrimitiveArray extends NewArrayOperation {
 	constructor(public readonly name: Primitive) { super() }
+	get primitive() { return true }
 }
 class NullConst extends Operation {
 	execute(stack: Stack) {

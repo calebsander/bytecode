@@ -317,7 +317,8 @@ export class NewObject extends Expression {
 export class NewArray extends Expression {
 	constructor(
 		public readonly type: NameReference,
-		public readonly length: Expression
+		public readonly length: Expression,
+		public readonly primitive: boolean
 	) { super() }
 	get doubleWidth() {
 		return false
@@ -329,7 +330,8 @@ export class NewArray extends Expression {
 	replace(replacements: Map<Expression, Expression>) {
 		return new NewArray(
 			this.type,
-			(replacements.get(this.length) || this.length).replace(replacements)
+			(replacements.get(this.length) || this.length).replace(replacements),
+			this.primitive
 		)
 	}
 	toString() {
@@ -339,7 +341,8 @@ export class NewArray extends Expression {
 export class Cast extends Expression {
 	constructor(
 		public readonly type: NameReference,
-		public readonly exp: Expression
+		public readonly exp: Expression,
+		public readonly primitive: boolean
 	) { super() }
 	get doubleWidth() {
 		const {name} = this.type
@@ -352,7 +355,8 @@ export class Cast extends Expression {
 	replace(replacements: Map<Expression, Expression>) {
 		return new Cast(
 			this.type,
-			(replacements.get(this.exp) || this.exp).replace(replacements)
+			(replacements.get(this.exp) || this.exp).replace(replacements),
+			this.primitive
 		)
 	}
 	toString(omitParens?: boolean) {

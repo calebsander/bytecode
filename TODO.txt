@@ -2,8 +2,6 @@ Identify constructor calls this(...) and super(...)
 
 Generate .java files
 
-Replace .../.../.../Abc with Abc, record it to be imported unless java.lang.*
-
 Support try-catch
 
 Identify new ...[]{...} expressions, e.g.:
