@@ -41,7 +41,7 @@ export const parseByteArray: (lengthParser: Parser<number>) => Parser<ArrayBuffe
 				length: bytes
 			})
 		)
-const parseTimes: <E>(parser: Parser<E>, n: number) => Parser<E[]> =
+export const parseTimes: <E>(parser: Parser<E>, n: number) => Parser<E[]> =
 	(parser, n) =>
 		n
 			? parseAndThen(parser, head =>

@@ -178,4 +178,21 @@ public class CodeTest {
 		if (a != a) a = a.getClass();
 		if (a == a) a = a.getClass();
 	}
+	public int switchStatement() {
+		int a = 1;
+		switch (a * 2) {
+			case 0:
+				a = 1;
+				break;
+			case 1:
+			case 2:
+				a = 2;
+				break;
+			case 3:
+				a = 3;
+			default:
+				a = 4;
+		}
+		return a;
+	}
 }

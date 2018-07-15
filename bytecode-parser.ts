@@ -1,4 +1,4 @@
-import {Parser, parseInt, parseByteArray, parseAndThen, parseReturn, slice} from './parse'
+import {Parser, parseInt, parseByteArray, parseAndThen, parseReturn, parseTimes, slice} from './parse'
 import {
 	ArrayAccess,
 	Assignment,
@@ -572,6 +572,21 @@ export class Goto extends Jump {
 		stack.push(new BooleanLiteral(true))
 	}
 }
+class TableSwitch extends Jump {
+	constructor(
+		public readonly offsetMap: Map<number, number>,
+		public readonly defaultOffset: number
+	) { super() }
+	get offsets() {
+		const {offsetMap, defaultOffset} = this
+		function* offsets() {
+			yield* offsetMap.values()
+			yield defaultOffset
+		}
+		return offsets()
+	}
+	execute() { throw new Error('Cannot execute tableswitch') }
+}
 
 interface InstructionLength {
 	instruction: Operation
@@ -605,6 +620,22 @@ const parseSignedByte = (data: DataView, offset: number) =>
 	({result: data.getInt8(offset), length: 1})
 const parseSignedShort = (data: DataView, offset: number) =>
 	({result: data.getInt16(offset), length: 2})
+const parseSignedInt = parseAndThen(parseInt, int => parseReturn(int >>> 0))
+const parseTableSwitch: Parser<TableSwitch> =
+	parseAndThen(parseSignedInt, defaultOffset =>
+		parseAndThen(parseSignedInt, low =>
+			parseAndThen(parseSignedInt, high =>
+				parseAndThen(
+					parseTimes(parseSignedInt, high - low + 1),
+					jumpOffsets => {
+						const offsetMap = new Map<number, number>()
+						for (let i = low; i <= high; i++) offsetMap.set(i, jumpOffsets[i - low])
+						return parseReturn(new TableSwitch(offsetMap, defaultOffset))
+					}
+				)
+			)
+		)
+	)
 
 const bytecodesFound = new Set<number>()
 
@@ -1131,6 +1162,13 @@ export const bytecodeParser: (constantPool: ConstantPool, isStatic: boolean) => 
 				case 0xa7:
 					({instruction, newOffset} = jumpOperation(data, offset, Goto))
 					break
+				case 0xaa: {
+					offset += 3 - ((offset + 3) % 4) //0-3 bytes of padding
+					const {result, length} = parseTableSwitch(slice(data, offset))
+					instruction = result
+					offset += length
+					break
+				}
 				case 0xac:
 					instruction = new IReturn
 					break
