@@ -181,14 +181,14 @@ public class CodeTest {
 	public int switchStatement() {
 		int a = 1;
 		switch (a * 2) {
-			case 0:
+			case -1:
 				a = 1;
 				break;
 			case 1:
 			case 2:
 				a = 2;
 				break;
-			case 3:
+			case 5:
 				a = 3;
 			default:
 				a = 4;

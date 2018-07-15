@@ -498,6 +498,13 @@ class SPush extends Operation {
 		stack.push(new IntegerLiteral(this.i, false))
 	}
 }
+export class TableSwitch extends Operation { //doesn't function much like a simple jump, so not subclassed from Jump
+	constructor(
+		public readonly offsetMap: Map<number, number>,
+		public readonly defaultOffset: number
+	) { super() }
+	execute() { throw new Error('Cannot execute tableswitch') }
+}
 //When executed, jumps push the expression under which they jump onto the stack
 export abstract class Jump extends Operation {
 	abstract readonly offsets: Iterable<number>
@@ -572,21 +579,6 @@ export class Goto extends Jump {
 		stack.push(new BooleanLiteral(true))
 	}
 }
-class TableSwitch extends Jump {
-	constructor(
-		public readonly offsetMap: Map<number, number>,
-		public readonly defaultOffset: number
-	) { super() }
-	get offsets() {
-		const {offsetMap, defaultOffset} = this
-		function* offsets() {
-			yield* offsetMap.values()
-			yield defaultOffset
-		}
-		return offsets()
-	}
-	execute() { throw new Error('Cannot execute tableswitch') }
-}
 
 interface InstructionLength {
 	instruction: Operation
@@ -620,7 +612,7 @@ const parseSignedByte = (data: DataView, offset: number) =>
 	({result: data.getInt8(offset), length: 1})
 const parseSignedShort = (data: DataView, offset: number) =>
 	({result: data.getInt16(offset), length: 2})
-const parseSignedInt = parseAndThen(parseInt, int => parseReturn(int >>> 0))
+const parseSignedInt = parseAndThen(parseInt, int => parseReturn(int | 0))
 const parseTableSwitch: Parser<TableSwitch> =
 	parseAndThen(parseSignedInt, defaultOffset =>
 		parseAndThen(parseSignedInt, low =>

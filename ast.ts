@@ -513,17 +513,7 @@ export class WhileStatement extends Statement {
 	}
 	toSections() {
 		const blockSections = blockToSections(this.block, this.label)
-		let labelNeeded = false
-		this.walkStatements(statement => { //look for break/continue referencing this loop inside a different loop
-			if (statement instanceof WhileStatement && statement !== this) {
-				statement.walkStatements(statement => {
-					if (statement instanceof BreakStatement || statement instanceof ContinueStatement) {
-						if (statement.loop === this.label) labelNeeded = true
-					}
-				})
-			}
-		})
-		const labelString = labelNeeded ? this.label.label + ': ' : ''
+		const labelString = isLabelNeeded(this) ? this.label.label + ': ' : ''
 		const whileCond = 'while (' + this.cond.toString(true) + ')'
 		if (this.doWhile) {
 			return [
@@ -544,7 +534,7 @@ export class WhileStatement extends Statement {
 	}
 }
 export interface Case {
-	exp: Expression
+	exp: Expression | null //null for default
 	block: Block
 }
 export class SwitchStatement extends Statement {
@@ -556,7 +546,7 @@ export class SwitchStatement extends Statement {
 	walkExpressions(handler: ExpressionHandler) {
 		this.val.walk(handler)
 		for (const {exp, block} of this.cases) {
-			exp.walk(handler)
+			if (exp) exp.walk(handler)
 			for (const statement of block) statement.walkExpressions(handler)
 		}
 	}
@@ -571,14 +561,26 @@ export class SwitchStatement extends Statement {
 		return new SwitchStatement(
 			(expressions.get(this.val) || this.val).replace(expressions),
 			this.cases.map(({exp, block}) => ({
-				exp: exp.replace(expressions),
+				exp: exp && exp.replace(expressions),
 				block: replaceBlock(block, replacements)
 			})),
 			this.label
 		)
 	}
 	toSections() {
-		return [] //TODO: implement
+		const innerSections: Section[] = []
+		for (const {exp, block} of this.cases) {
+			innerSections.push(
+				(exp ? 'case ' + exp.toString(true) : 'default') + ':',
+				new IndentedLines(blockToSections(block, this.label))
+			)
+		}
+		const labelString = isLabelNeeded(this) ? this.label.label + ': ' : ''
+		return [
+			labelString + 'switch (' + this.val.toString(true) + ') {',
+			new IndentedLines(innerSections),
+			'}'
+		]
 	}
 }
 export type Block = Statement[]
@@ -598,3 +600,18 @@ export const blockToString = (block: Block) =>
 	flatten(blockToSections(block).map(section =>
 		section instanceof IndentedLines ? section.toLines() : [section]
 	)).join('\n')
+function isLabelNeeded(loopOrSwitch: WhileStatement | SwitchStatement) {
+	const {label} = loopOrSwitch
+	let labelNeeded = false
+	loopOrSwitch.walkStatements(statement => { //look for break/continue referencing this loop inside a different loop
+		const isLoopOrSwitch = statement instanceof WhileStatement || statement instanceof SwitchStatement
+		if (isLoopOrSwitch && statement !== loopOrSwitch) {
+			statement.walkStatements(statement => {
+				if (statement instanceof BreakStatement || statement instanceof ContinueStatement) {
+					if (statement.loop === label) labelNeeded = true
+				}
+			})
+		}
+	})
+	return labelNeeded
+}

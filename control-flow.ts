@@ -3,25 +3,22 @@ import {
 	Block,
 	BooleanLiteral,
 	BreakStatement,
+	Case,
 	ContinueStatement,
 	IfStatement,
+	IntegerLiteral,
 	LoopReference,
 	Ternary,
 	UnaryOperation,
-	WhileStatement
+	WhileStatement,
+	SwitchStatement
 } from './ast'
-import {Code, forcePop, Goto, If, Jump, Stack} from './bytecode-parser'
+import {Code, forcePop, Goto, If, Jump, Stack, TableSwitch} from './bytecode-parser'
 
 interface LoopCounter {
 	count: number
 }
-class Loop implements LoopReference {
-	constructor(public readonly n: number) {}
-	get label() {
-		return `loop${this.n}`
-	}
-}
-type Loops = Map<number, Loop>
+type Loops = Map<number, LoopReference>
 
 function equalsUpTo<T>(arr1: T[], arr2: T[], len: number) {
 	for (let i = 0; i < len; i++) {
@@ -36,10 +33,13 @@ class IfExceedsBoundsError extends Error {
 	}
 }
 
+const getCaseExpression = (value: number | null) =>
+	value === null ? null : new IntegerLiteral(value)
+
 export function parseControlFlow(
 	instructions: Code,
 	start = 0, //inclusive
-	end = Infinity, //exclusive
+	end = Math.max(...[...instructions].map(([offset, {length}]) => offset + length)), //exclusive
 	loopCounter: LoopCounter = {count: 1},
 	breaks: Loops = new Map,
 	continues: Loops = new Map,
@@ -66,15 +66,17 @@ export function parseControlFlow(
 	let firstJumpForward = Infinity, //index of the instruction after the if jump
 	    firstJumpForwardTarget: number, //index of the start of the else block, or after the if statement
 	    firstJumpBack = Infinity, //index of the target of the do-while jump back
-	    firstJumpBackSource: number //index of the do-while jump
+	    firstJumpBackSource: number, //index of the do-while jump
+	    firstSwitch = Infinity //index of tableswitch instruction
 	for (let index = start; index < end;) {
 		const instructionLength = instructions.get(index)
 		if (!instructionLength) break // end of method
 		const {instruction, length} = instructionLength
 		const nextIndex = index + length
 		preceding.set(nextIndex, index)
+		if (instruction instanceof TableSwitch) firstSwitch = Math.min(firstSwitch, index)
 		// Breaks and continues don't need to be processed as separate blocks
-		if (instruction instanceof Jump && !(getBreak(index) || getContinue(index))) {
+		else if (instruction instanceof Jump && !(getBreak(index) || getContinue(index))) {
 			for (const offset of instruction.offsets) {
 				const target = index + offset
 				if (offset < 0) {
@@ -100,7 +102,7 @@ export function parseControlFlow(
 		}
 		index = nextIndex
 	}
-	const firstControl = Math.min(firstJumpForward, firstJumpBack, end)
+	const firstControl = Math.min(firstJumpForward, firstJumpBack, firstSwitch, end)
 	for (let index = start; index < firstControl;) {
 		const instructionLength = instructions.get(index)
 		if (!instructionLength) break // end of method
@@ -124,7 +126,7 @@ export function parseControlFlow(
 		}
 		index += length
 	}
-	if (firstJumpForward < firstJumpBack && firstJumpForward <= end) {
+	if (firstControl === firstJumpForward) {
 		if (firstJumpForwardTarget! > end) throw new IfExceedsBoundsError(firstJumpForward)
 		const elseCondition = forcePop(stack)
 		const lastIndexOfIf = preceding.get(firstJumpForwardTarget)!
@@ -234,10 +236,10 @@ export function parseControlFlow(
 			stack, block
 		)
 	}
-	else if (firstJumpBack < Math.min(end, firstJumpForward)) {
+	else if (firstControl === firstJumpBack) {
 		if (firstJumpBackSource! > end) throw new Error('While loop exceeds block')
 		const loopEnd = firstJumpBackSource + instructions.get(firstJumpBackSource)!.length
-		const loop = new Loop(loopCounter.count++)
+		const loop = {label: `loop${loopCounter.count++}`}
 		breaks.set(loopEnd, loop)
 		continues.set(firstJumpBack, loop)
 		const whileStack: Stack = []
@@ -262,6 +264,87 @@ export function parseControlFlow(
 			loopCounter, breaks, continues,
 			stack, block
 		)
+	}
+	else if (firstControl === firstSwitch) {
+		const {offsetMap, defaultOffset} = instructions.get(firstSwitch)!.instruction as TableSwitch
+		const caseStartSet = new Set<number>()
+		const inverseJumpMap = new Map<number, (number | null)[]>() //map of case starts to values which hit that case
+		const offsetMapWithDefault = new Map<number | null, number>(offsetMap)
+			.set(null, defaultOffset)
+		for (const [value, offset] of offsetMapWithDefault) {
+			const caseStart = firstSwitch + offset
+			caseStartSet.add(caseStart)
+			let caseValues = inverseJumpMap.get(caseStart)
+			if (!caseValues) {
+				caseValues = []
+				inverseJumpMap.set(caseStart, caseValues)
+			}
+			caseValues.push(value)
+		}
+		const caseStarts = [...caseStartSet].sort((a, b) => a - b)
+		if (Math.max(...caseStarts) > end) throw new Error('Switch statement exceeds block')
+		const val = forcePop(stack)
+		const switchLabel = {label: `switch${loopCounter.count++}`}
+		let breakIndex: number | undefined //guaranteed to be nonzero if defined
+		const caseBlocks = new Map<number, Block>()
+		for (let caseIndex = 0; caseIndex < caseStarts.length; caseIndex++) {
+			const caseStart = caseStarts[caseIndex]
+			function parseCase(): Block {
+				const caseEnd = caseIndex + 1 < caseStarts.length
+					? caseStarts[caseIndex + 1]
+					: breakIndex || end
+				try {
+					const caseStack: Stack = []
+					const caseBlock = parseControlFlow(
+						instructions,
+						caseStart, caseEnd,
+						loopCounter, breaks, continues,
+						caseStack
+					)
+					if (caseStack.length) throw new Error('Expected empty case stack')
+					return caseBlock
+				}
+				catch (e) {
+					if (!breakIndex && e instanceof IfExceedsBoundsError) {
+						const jumpIndex = preceding.get(e.instructionAfterIf)!
+						const jump = instructions.get(jumpIndex)!.instruction
+						if (jump instanceof Goto) {
+							breakIndex = jumpIndex + jump.offset
+							if (breakIndex <= firstSwitch || breakIndex > end) throw new Error('Break exceeds block')
+							breaks.set(breakIndex, switchLabel)
+							return parseCase() //try again with the break defined
+						}
+					}
+					throw e
+				}
+			}
+			caseBlocks.set(caseStart, parseCase())
+		}
+		const cases: Case[] = []
+		for (const caseStart of caseStarts) {
+			const values = inverseJumpMap.get(caseStart)!
+			for (const emptyCaseLabel of values.slice(0, -1)) {
+				cases.push({
+					exp: getCaseExpression(emptyCaseLabel),
+					block: []
+				})
+			}
+			const [lastValue] = values.slice(-1)
+			cases.push({
+				exp: getCaseExpression(lastValue),
+				block: caseBlocks.get(caseStart)!
+			})
+		}
+		block.push(new SwitchStatement(val, cases, switchLabel))
+		if (breakIndex !== undefined) {
+			breaks.delete(breakIndex)
+			parseControlFlow(
+				instructions,
+				breakIndex, end,
+				loopCounter, breaks, continues,
+				stack, block
+			)
+		}
 	}
 	return block
 }

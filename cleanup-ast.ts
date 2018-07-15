@@ -18,6 +18,7 @@ import {
 	ReturnStatement,
 	Statement,
 	StatementHandler,
+	SwitchStatement,
 	Ternary,
 	UnaryOperation,
 	WhileStatement
@@ -272,6 +273,31 @@ const resolveIfBodyOfWhile: CleanupStrategy = block => {
 		statements: replacements
 	}
 }
+const collapseCasesWithDefault: CleanupStrategy = block => {
+	const replacements = new Map<Statement, Statement[]>()
+	walkBlockStatements(block, statement => {
+		if (statement instanceof SwitchStatement) {
+			const {val, cases, label} = statement
+			const defaultIndex = cases.findIndex(({exp}) => !exp)
+			if (defaultIndex > -1) {
+				let firstEmptyIndex: number
+				for (firstEmptyIndex = defaultIndex - 1; !cases[firstEmptyIndex].block.length; firstEmptyIndex--);
+				firstEmptyIndex++;
+				if (firstEmptyIndex < defaultIndex) {
+					replacements.set(statement, [new SwitchStatement(
+						val,
+						cases.slice(0, firstEmptyIndex).concat(cases.slice(defaultIndex)),
+						label
+					)])
+				}
+			}
+		}
+	})
+	return {
+		expressions: new Map,
+		statements: replacements
+	}
+}
 const STRATEGIES = [
 	removeTrailingReturn,
 	avoidEmptyIfBlock,
@@ -283,7 +309,8 @@ const STRATEGIES = [
 	trueDoWhileToWhile,
 	identifyWhileCondition,
 	resolveTrueIfCondition,
-	resolveIfBodyOfWhile
+	resolveIfBodyOfWhile,
+	collapseCasesWithDefault
 ]
 
 export function cleanup(block: Block): Block {
