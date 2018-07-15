@@ -156,4 +156,26 @@ public class CodeTest {
 		if (d > 0) return 1;
 		return 0;
 	}
+	public void ifConditions() {
+		boolean b = true;
+		if (b) b = false;
+		if (!b) b = true;
+		int a = -10;
+		do { a++; } while (a < 0);
+		if (a <= 0) a *= 10;
+	}
+	public void intIfConditions() {
+		int a = 3;
+		if (a != 3) a = 5;
+		if (a == 10) a = 4;
+		if (a >= 5) a = 2;
+		if (a < 5) a = 7;
+		if (a <= 8) a = 9;
+		if (a > 100) a = 0;
+	}
+	public void objectComparison() {
+		Object a = new Object();
+		if (a != a) a = a.getClass();
+		if (a == a) a = a.getClass();
+	}
 }

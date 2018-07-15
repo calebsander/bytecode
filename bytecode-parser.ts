@@ -511,8 +511,29 @@ export abstract class IfICmp extends Jump {
 		stack.push(new BinaryOperation(this.jumpOp, value1, value2))
 	}
 }
+class IfACmpEq extends IfICmp {
+	get jumpOp(): BinaryOp { return '==' }
+}
+class IfACmpNe extends IfICmp {
+	get jumpOp(): BinaryOp { return '!=' }
+}
+class IfICmpEq extends IfICmp {
+	get jumpOp(): BinaryOp { return '==' }
+}
+class IfICmpNe extends IfICmp {
+	get jumpOp(): BinaryOp { return '!=' }
+}
+class IfICmpLt extends IfICmp {
+	get jumpOp(): BinaryOp { return '<' }
+}
 class IfICmpGe extends IfICmp {
 	get jumpOp(): BinaryOp { return '>=' }
+}
+class IfICmpGt extends IfICmp {
+	get jumpOp(): BinaryOp { return '>' }
+}
+class IfICmpLe extends IfICmp {
+	get jumpOp(): BinaryOp { return '<=' }
 }
 export abstract class If extends Jump {
 	constructor(public readonly offset: number) { super() }
@@ -532,8 +553,14 @@ class IfEq extends If {
 class IfNe extends If {
 	get jumpOp(): BinaryOp { return '!=' }
 }
+class IfLt extends If {
+	get jumpOp(): BinaryOp { return '<' }
+}
 class IfGe extends If {
 	get jumpOp(): BinaryOp { return '>=' }
+}
+class IfGt extends If {
+	get jumpOp(): BinaryOp { return '>' }
 }
 class IfLe extends If {
 	get jumpOp(): BinaryOp { return '<=' }
@@ -1065,14 +1092,41 @@ export const bytecodeParser: (constantPool: ConstantPool, isStatic: boolean) => 
 				case 0x9a:
 					({instruction, newOffset} = jumpOperation(data, offset, IfNe))
 					break
+				case 0x9b:
+					({instruction, newOffset} = jumpOperation(data, offset, IfLt))
+					break
 				case 0x9c:
 					({instruction, newOffset} = jumpOperation(data, offset, IfGe))
+					break
+				case 0x9d:
+					({instruction, newOffset} = jumpOperation(data, offset, IfGt))
 					break
 				case 0x9e:
 					({instruction, newOffset} = jumpOperation(data, offset, IfLe))
 					break
+				case 0x9f:
+					({instruction, newOffset} = jumpOperation(data, offset, IfICmpEq))
+					break
+				case 0xa0:
+					({instruction, newOffset} = jumpOperation(data, offset, IfICmpNe))
+					break
+				case 0xa1:
+					({instruction, newOffset} = jumpOperation(data, offset, IfICmpLt))
+					break
 				case 0xa2:
 					({instruction, newOffset} = jumpOperation(data, offset, IfICmpGe))
+					break
+				case 0xa3:
+					({instruction, newOffset} = jumpOperation(data, offset, IfICmpGt))
+					break
+				case 0xa4:
+					({instruction, newOffset} = jumpOperation(data, offset, IfICmpLe))
+					break
+				case 0xa5:
+					({instruction, newOffset} = jumpOperation(data, offset, IfACmpEq))
+					break
+				case 0xa6:
+					({instruction, newOffset} = jumpOperation(data, offset, IfACmpNe))
 					break
 				case 0xa7:
 					({instruction, newOffset} = jumpOperation(data, offset, Goto))
@@ -1200,6 +1254,6 @@ process.on('exit', () => {
 			.map(x => '0x' + x.toString(16))
 	)
 	let i: number
-	for (i = 0x60; bytecodesFound.has(i); i++); //skip dup/swap instructions
+	for (i = 0xaa; bytecodesFound.has(i); i++); //skip dup/swap and jsr/ret instructions
 	console.log('0x' + i.toString(16))
 })
