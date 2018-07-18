@@ -1,6 +1,8 @@
-Identify constructor calls this(...) and super(...)
+Decompile fields
 
-Generate .java files
+Declare local variables
+
+Stringify "else if" more nicely
 
 Support try-catch
 

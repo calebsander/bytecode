@@ -20,13 +20,6 @@ interface LoopCounter {
 }
 type Loops = Map<number, LoopReference>
 
-function equalsUpTo<T>(arr1: T[], arr2: T[], len: number) {
-	for (let i = 0; i < len; i++) {
-		if (arr1[i] !== arr2[i]) return false
-	}
-	return true
-}
-
 class IfExceedsBoundsError extends Error {
 	constructor(public readonly instructionAfterIf: number) {
 		super('If statement exceeds block')
@@ -36,14 +29,14 @@ class IfExceedsBoundsError extends Error {
 const getCaseExpression = (value: number | null) =>
 	value === null ? null : new IntegerLiteral(value)
 
-export function parseControlFlow(
+function parseControlFlow(
 	instructions: Code,
-	start = 0, //inclusive
-	end = Math.max(...[...instructions].map(([offset, {length}]) => offset + length)), //exclusive
-	loopCounter: LoopCounter = {count: 1},
-	breaks: Loops = new Map,
-	continues: Loops = new Map,
-	stack: Stack = [],
+	start: number, //inclusive
+	end: number, //exclusive
+	loopCounter: LoopCounter,
+	breaks: Loops,
+	continues: Loops,
+	stack: Stack,
 	block: Block = []
 ): Block {
 	const getBreak = (index: number) => {
@@ -137,7 +130,7 @@ export function parseControlFlow(
 		let elseBlockEnd: number, elseBlock: Block, elseStack: Stack
 		if (hasElseBlock) {
 			elseBlockEnd = lastIndexOfIf + (lastInstructionOfIf as Goto).offset
-			elseStack = [...stack]
+			elseStack = []
 			elseBlock = parseControlFlow(
 				instructions,
 				firstJumpForwardTarget, elseBlockEnd,
@@ -146,7 +139,7 @@ export function parseControlFlow(
 			)
 		}
 		else elseBlock = elseStack = []
-		const ifStack = [...stack]
+		const ifStack: Stack = []
 		const ifBlock: Block = []
 		try {
 			parseControlFlow(
@@ -156,10 +149,9 @@ export function parseControlFlow(
 				ifStack, ifBlock
 			)
 			const isTernary = !(ifBlock.length || elseBlock.length) &&
-				ifStack.length === stack.length + 1 && equalsUpTo(ifStack, stack, stack.length) &&
-				elseStack.length === stack.length + 1 && equalsUpTo(elseStack, stack, stack.length)
+				ifStack.length === 1 && elseStack.length === 1
 			const cond = new UnaryOperation('!', elseCondition)
-			if (isTernary) stack.push(new Ternary(cond, ifStack.pop()!, elseStack.pop()!))
+			if (isTernary) stack.push(new Ternary(cond, ifStack[0], elseStack[0]))
 			else block.push(new IfStatement(cond, ifBlock, elseBlock))
 		}
 		catch (e) {
@@ -347,4 +339,14 @@ export function parseControlFlow(
 		}
 	}
 	return block
+}
+export function parseMethodAST(instructions: Code): Block {
+	let end = 0
+	for (const [offset, {length}] of instructions) end = offset + length
+	return parseControlFlow(
+		instructions,
+		0, end,
+		{count: 1}, new Map, new Map,
+		[]
+	)
 }

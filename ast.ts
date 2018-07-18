@@ -1,6 +1,6 @@
 export type Numeric = number | BigInt
 export type ExpressionHandler = (exp: Expression) => void
-type Section = IndentedLines | string
+export type Section = IndentedLines | string
 export class IndentedLines {
 	static readonly INDENT: string = ' '.repeat(2)
 	constructor(public readonly sections: Section[]) {}
@@ -67,10 +67,11 @@ export class NullLiteral extends PrimitiveExpression {
 	toString() { return 'null' }
 }
 export class ThisLiteral extends PrimitiveExpression {
+	constructor(public readonly isSuper = false) { super() }
 	get doubleWidth() {
 		return false
 	}
-	toString() { return 'this' }
+	toString() { return this.isSuper ? 'super' : 'this' }
 }
 export class Variable extends PrimitiveExpression {
 	constructor(
@@ -221,7 +222,7 @@ export class ClassReference extends PrimitiveExpression {
 export class FunctionCall extends Expression {
 	constructor(
 		public readonly obj: Expression,
-		public readonly func: NameReference,
+		public readonly func: NameReference | null, //null if calling a constructor
 		public readonly args: Expression[],
 		public readonly doubleWidth: boolean
 	) { super() }
@@ -241,9 +242,10 @@ export class FunctionCall extends Expression {
 		)
 	}
 	toString() {
-		return this.obj.toString() +
-		'.' + this.func.name +
-		'(' + this.args.map(arg => arg.toString(true)).join(', ') + ')'
+		const {obj, func, args} = this
+		return obj.toString() +
+			(func ? '.' + func.name : '') +
+			'(' + args.map(arg => arg.toString(true)).join(', ') + ')'
 	}
 }
 export class FieldAccess extends Expression {
@@ -584,7 +586,7 @@ export class SwitchStatement extends Statement {
 	}
 }
 export type Block = Statement[]
-const flatten = <T>(segments: T[][]): T[] =>
+export const flatten = <T>(segments: T[][]): T[] =>
 	([] as T[]).concat(...segments)
 export function replaceBlock(block: Block, replacements: Replacements): Block {
 	const {statements} = replacements
@@ -594,12 +596,14 @@ export function replaceBlock(block: Block, replacements: Replacements): Block {
 		)
 	))
 }
-const blockToSections = (block: Block, enclosingLoop?: LoopReference) =>
+export const blockToSections = (block: Block, enclosingLoop?: LoopReference) =>
 	flatten(block.map(statement => statement.toSections(enclosingLoop)))
-export const blockToString = (block: Block) =>
-	flatten(blockToSections(block).map(section =>
+export const sectionsToString = (sections: Section[]) =>
+	flatten(sections.map(section =>
 		section instanceof IndentedLines ? section.toLines() : [section]
 	)).join('\n')
+export const blockToString = (block: Block) =>
+	sectionsToString(blockToSections(block))
 function isLabelNeeded(loopOrSwitch: WhileStatement | SwitchStatement) {
 	const {label} = loopOrSwitch
 	let labelNeeded = false

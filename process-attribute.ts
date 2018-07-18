@@ -5,6 +5,7 @@ import {FieldOrMethod} from './fields-or-methods-parser'
 
 interface AttributeArgs {
 	attribute: Attribute
+	className: string
 	constantPool: ConstantPool
 	method: FieldOrMethod
 }
@@ -12,13 +13,17 @@ interface ProcessedAttribute {
 	type: string
 	value: any
 }
-export function processAttribute({attribute, constantPool, method}: AttributeArgs): ProcessedAttribute {
+export function processAttribute({attribute, className, constantPool, method}: AttributeArgs): ProcessedAttribute {
 	const type = attribute.type.getValue(constantPool)
-	const {info: data} = attribute
+	const dataView = new DataView(attribute.info)
 	let value: any = null
 	switch (type) {
 		case 'Code': {
-			value = codeParser(constantPool, method.accessFlags.static)(new DataView(data)).result
+			value = codeParser({
+				constantPool,
+				className,
+				isStatic: method.accessFlags.static
+			})(dataView).result
 			break
 		}
 		default: console.error('Unknown attribute type', type)

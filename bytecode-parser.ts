@@ -28,6 +28,7 @@ import {
 import {constantParser} from './constant-parser'
 import ConstantPoolIndex from './constant-pool-index'
 import {ConstantPool, Class, LiteralConstant, NameAndType, Ref} from './constant-pool-parser'
+import {doubleWidthType, getArgTypes, getType} from './descriptor'
 
 const LDC = 0x12
 
@@ -37,41 +38,13 @@ export function forcePop(stack: Stack) {
 	if (!stackTop) throw new Error('Empty stack')
 	return stackTop
 }
+function flushStack(stack: Stack, block: Block) {
+	for (const exp of stack) block.push(new ExpressionStatement(exp))
+	stack.length = 0
+}
 
-function argCount({descriptor}: NameAndType) {
-	let count = 0
-	charLoop: for (let i = 1; i < descriptor.length; i++) { //skip leading open paren
-		switch (descriptor[i]) {
-			case 'L':
-				while (descriptor[++i] !== ';') {
-					if (i > descriptor.length) throw new Error('Missing semicolon in descriptor')
-				}
-				count++
-				break
-			case 'B':
-			case 'C':
-			case 'D':
-			case 'F':
-			case 'I':
-			case 'J':
-			case 'S':
-			case 'Z':
-				count++
-				break
-			case '[':
-				break
-			case ')':
-				break charLoop
-			default:
-				throw new Error('Unexpected character in descriptor: ' + descriptor[i])
-		}
-	}
-	return count
-}
-function isDoubleWidth({descriptor}: NameAndType) {
-	const returnType = descriptor.substring(descriptor.indexOf(')') + 1)
-	return returnType === 'J' || returnType === 'D'
-}
+const isDoubleWidth = ({descriptor}: NameAndType) =>
+	doubleWidthType(getType(descriptor))
 
 export abstract class Operation {
 	abstract execute(stack: Stack, block: Block): void
@@ -116,27 +89,42 @@ abstract class ArrayStoreOperation extends Operation {
 }
 abstract class ReturnOperation extends Operation {
 	execute(stack: Stack, block: Block) {
-		block.push(new ReturnStatement(forcePop(stack)))
+		const returnVal = forcePop(stack)
+		flushStack(stack, block)
+		block.push(new ReturnStatement(returnVal))
 	}
 }
 abstract class InvokeOperation extends Operation {
-	constructor(public readonly method: Ref) { super() }
+	private readonly argsLength: number
+	private readonly doubleWidth: boolean
+	constructor(
+		public readonly className: string,
+		public readonly method: Ref
+	) {
+		super()
+		this.argsLength = getArgTypes(method.nameAndType.descriptor).length
+		this.doubleWidth = isDoubleWidth(method.nameAndType)
+	}
 	get isStatic() { return false }
 	execute(stack: Stack) {
-		const {nameAndType} = this.method
-		const argsLength = argCount(nameAndType)
-		const args = new Array<Expression>(argsLength)
-		for (let i = argsLength - 1; i >= 0; i--) args[i] = forcePop(stack)
+		const {class: clazz, nameAndType} = this.method
+		const args = new Array<Expression>(this.argsLength)
+		for (let i = this.argsLength - 1; i >= 0; i--) args[i] = forcePop(stack)
 		const obj = this.isStatic
 			? new ClassReference(this.method.class)
 			: forcePop(stack)
-		if (nameAndType.name === '<init>' && obj instanceof NewObject && !obj.args) {
-			obj.args = args
+		if (nameAndType.name === '<init>') {
+			if (obj instanceof NewObject) {
+				if (obj.args) throw new Error('Already initialized')
+				obj.args = args
+			}
+			else if (obj instanceof ThisLiteral) {
+				const thisObj = new ThisLiteral(clazz.name !== this.className)
+				stack.push(new FunctionCall(thisObj, null, args, false))
+			}
+			else throw new Error('Unexpected <init>() call')
 		}
-		else {
-			const call = new FunctionCall(obj, nameAndType, args, isDoubleWidth(nameAndType))
-			stack.push(call)
-		}
+		else stack.push(new FunctionCall(obj, nameAndType, args, this.doubleWidth))
 	}
 }
 abstract class NewArrayOperation extends Operation {
@@ -317,13 +305,17 @@ class FReturn extends ReturnOperation {}
 class FStore extends LocalStoreOperation {}
 class FSub extends SubOperation {}
 class GetStatic extends Operation {
-	constructor(public readonly field: Ref) { super() }
+	private readonly doubleWidth: boolean
+	constructor(public readonly field: Ref) {
+		super()
+		this.doubleWidth = isDoubleWidth(field.nameAndType)
+	}
 	execute(stack: Stack) {
 		const {nameAndType} = this.field
 		stack.push(new FieldAccess(
 			new ClassReference(this.field.class),
 			nameAndType,
-			isDoubleWidth(nameAndType)
+			this.doubleWidth
 		))
 	}
 }
@@ -486,7 +478,8 @@ class Pop extends Operation {
 	}
 }
 class Return extends Operation {
-	execute(_: Stack, block: Block) {
+	execute(stack: Stack, block: Block) {
+		flushStack(stack, block)
 		block.push(new ReturnStatement(null))
 	}
 }
@@ -631,9 +624,15 @@ const parseTableSwitch: Parser<TableSwitch> =
 
 const bytecodesFound = new Set<number>()
 
+export interface MethodContext {
+	constantPool: ConstantPool
+	className: string
+	isStatic: boolean
+}
+
 const parseCode = parseByteArray(parseInt)
-export const bytecodeParser: (constantPool: ConstantPool, isStatic: boolean) => Parser<Code> =
-	(constantPool, isStatic) => parseAndThen(parseCode, bytecode => {
+export const bytecodeParser = ({constantPool, className, isStatic}: MethodContext) =>
+	parseAndThen(parseCode, bytecode => {
 		const data = new DataView(bytecode)
 		const instructions: Code = new Map
 		let offset = 0
@@ -1187,25 +1186,25 @@ export const bytecodeParser: (constantPool: ConstantPool, isStatic: boolean) => 
 				}
 				case 0xb6: {
 					const {result: method, length} = constantParser(slice(data, offset))
-					instruction = new InvokeVirtual(method.getValue(constantPool))
+					instruction = new InvokeVirtual(className, method.getValue(constantPool))
 					offset += length
 					break
 				}
 				case 0xb7: {
 					const {result: method, length} = constantParser(slice(data, offset))
-					instruction = new InvokeSpecial(method.getValue(constantPool))
+					instruction = new InvokeSpecial(className, method.getValue(constantPool))
 					offset += length
 					break
 				}
 				case 0xb8: {
 					const {result: method, length} = constantParser(slice(data, offset))
-					instruction = new InvokeStatic(method.getValue(constantPool))
+					instruction = new InvokeStatic(className, method.getValue(constantPool))
 					offset += length
 					break
 				}
 				case 0xb9: {
 					const {result: method, length} = constantParser(slice(data, offset))
-					instruction = new InvokeInterface(method.getValue(constantPool))
+					instruction = new InvokeInterface(className, method.getValue(constantPool))
 					offset += length + 2 //skip 2 count bytes
 					break
 				}

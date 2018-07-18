@@ -327,38 +327,38 @@ export function cleanup(block: Block): Block {
 	} while (someReplaced)
 	return block
 }
+export function convertClassString(clazz: string, imports: Set<string>) {
+	const dotString = clazz.replace(/\//g, '.')
+	if (!dotString.startsWith('java.lang.')) imports.add(dotString)
+	const [clazzName] = dotString.split('.').slice(-1)
+	return clazzName
+}
 //Replaces, e.g. java/util/ArrayList with ArrayList
 export function resolvePackageClasses(block: Block, imports: Set<string>): Block {
-	function convertClassString(clazz: string) {
-		const dotString = clazz.replace(/\//g, '.')
-		if (!dotString.startsWith('java.lang.')) imports.add(dotString)
-		const [clazzName] = dotString.split('.').slice(-1)
-		return clazzName
-	}
 	const replacements = new Map<Expression, Expression>()
 	walkBlockExpressions(block, expression => {
 		if (expression instanceof ClassReference) {
 			replacements.set(expression, new ClassReference({
-				name: convertClassString(expression.clazz.name)
+				name: convertClassString(expression.clazz.name, imports)
 			}))
 		}
 		else if (expression instanceof NewObject) {
 			const replacedExpression = new NewObject({
-				name: convertClassString(expression.clazz.name)
+				name: convertClassString(expression.clazz.name, imports)
 			})
 			replacedExpression.args = expression.args
 			replacements.set(expression, replacedExpression)
 		}
 		else if (expression instanceof NewArray && !expression.primitive) {
 			replacements.set(expression, new NewArray(
-				{name: convertClassString(expression.type.name)},
+				{name: convertClassString(expression.type.name, imports)},
 				expression.length,
 				expression.primitive
 			))
 		}
 		else if (expression instanceof Cast && !expression.primitive) {
 			replacements.set(expression, new Cast(
-				{name: convertClassString(expression.type.name)},
+				{name: convertClassString(expression.type.name, imports)},
 				expression.exp,
 				expression.primitive
 			))
