@@ -1,3 +1,5 @@
+import {varName} from './variable-types'
+
 export type Numeric = number | BigInt
 export type ExpressionHandler = (exp: Expression) => void
 export type Section = IndentedLines | string
@@ -78,7 +80,7 @@ export class Variable extends PrimitiveExpression {
 		public readonly n: number,
 		public readonly doubleWidth = false
 	) { super() }
-	toString() { return 'var' + String(this.n) }
+	toString() { return varName(this.n) }
 }
 export type IncDec = '++' | '--'
 export type UnaryOp

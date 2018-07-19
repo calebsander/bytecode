@@ -29,6 +29,7 @@ import {constantParser} from './constant-parser'
 import ConstantPoolIndex from './constant-pool-index'
 import {ConstantPool, Class, LiteralConstant, NameAndType, Ref} from './constant-pool-parser'
 import {doubleWidthType, getArgTypes, getType} from './descriptor'
+import {LocalType, Primitive, varName} from './variable-types'
 
 const LDC = 0x12
 
@@ -48,16 +49,29 @@ const isDoubleWidth = ({descriptor}: NameAndType) =>
 
 export abstract class Operation {
 	abstract execute(stack: Stack, block: Block): void
+	setLocalTypes(_: Map<number, LocalType>) {}
 }
-abstract class LocalLoadOperation extends Operation {
+abstract class LoadStoreOperation extends Operation {
 	constructor(public readonly n: number) { super() }
+	abstract readonly type: LocalType
+	setLocalTypes(types: Map<number, LocalType>) {
+		const {n, type} = this
+		const previousType = types.get(n)
+		if (previousType) {
+			if (previousType !== type) {
+				throw new Error(`${varName(n)} used as ${previousType} and ${type}`)
+			}
+		}
+		else types.set(n, type)
+	}
+}
+abstract class LocalLoadOperation extends LoadStoreOperation {
 	abstract readonly doubleWidth: boolean
 	execute(stack: Stack) {
 		stack.push(new Variable(this.n, this.doubleWidth))
 	}
 }
-abstract class LocalStoreOperation extends Operation {
-	constructor(public readonly n: number) { super() }
+abstract class LocalStoreOperation extends LoadStoreOperation {
 	execute(stack: Stack, block: Block) {
 		block.push(new ExpressionStatement(
 			new Assignment(
@@ -76,9 +90,9 @@ abstract class ArrayLoadOperation extends Operation {
 }
 abstract class ArrayStoreOperation extends Operation {
 	execute(stack: Stack, block: Block) {
-		const value = forcePop(stack)
-		const index = forcePop(stack)
-		const arr = forcePop(stack)
+		const value = forcePop(stack),
+		      index = forcePop(stack),
+		      arr   = forcePop(stack)
 		block.push(new ExpressionStatement(
 			new Assignment(
 				new ArrayAccess(arr, index, false),
@@ -210,6 +224,7 @@ class ALoad extends LocalLoadOperation {
 		public readonly n: number,
 		public readonly isStatic: boolean
 	) { super(n) }
+	get type(): LocalType { return 'Object' }
 	get doubleWidth() { return false }
 	execute(stack: Stack) {
 		if (this.n || this.isStatic) super.execute(stack)
@@ -231,7 +246,9 @@ class ArrayLength extends Operation {
 		))
 	}
 }
-class AStore extends LocalStoreOperation {}
+class AStore extends LocalStoreOperation {
+	get type(): LocalType { return 'Object' }
+}
 class AThrow extends Operation {
 	execute(stack: Stack, block: Block) {
 		const exception = forcePop(stack)
@@ -266,13 +283,16 @@ class DCmpL extends SubOperation {} //not sure how to distinguish how they deal 
 class DCmpG extends SubOperation {}
 class DDiv extends DivOperation {}
 class DLoad extends LocalLoadOperation {
+	get type(): LocalType { return 'double' }
 	get doubleWidth() { return true }
 }
 class DMul extends MulOperation {}
 class DNeg extends NegOperation {}
 class DRem extends RemOperation {}
 class DReturn extends ReturnOperation {}
-class DStore extends LocalStoreOperation {}
+class DStore extends LocalStoreOperation {
+	get type(): LocalType { return 'double' }
+}
 class DSub extends SubOperation {}
 class Dup extends Operation {
 	execute(stack: Stack) {
@@ -296,13 +316,16 @@ class FConst extends Operation {
 }
 class FDiv extends DivOperation {}
 class FLoad extends LocalLoadOperation {
+	get type(): LocalType { return 'float' }
 	get doubleWidth() { return false }
 }
 class FMul extends MulOperation {}
 class FNeg extends NegOperation {}
 class FRem extends RemOperation {}
 class FReturn extends ReturnOperation {}
-class FStore extends LocalStoreOperation {}
+class FStore extends LocalStoreOperation {
+	get type(): LocalType { return 'float' }
+}
 class FSub extends SubOperation {}
 class GetStatic extends Operation {
 	private readonly doubleWidth: boolean
@@ -360,6 +383,7 @@ class IInc extends Operation {
 	}
 }
 class ILoad extends LocalLoadOperation {
+	get type(): LocalType { return 'int' }
 	get doubleWidth() { return false }
 }
 class IMul extends MulOperation {}
@@ -369,7 +393,9 @@ class IRem extends RemOperation {}
 class IReturn extends ReturnOperation {}
 class IShiftLeft extends ShiftLeftOpertaion {}
 class IShiftRight extends ShiftRightOperation {}
-class IStore extends LocalStoreOperation {}
+class IStore extends LocalStoreOperation {
+	get type(): LocalType { return 'int' }
+}
 class ISub extends SubOperation {}
 class IUShiftRight extends UShiftRightOperation {}
 class IXor extends XorOperation {}
@@ -395,6 +421,7 @@ class LConst extends Operation {
 }
 class LDiv extends DivOperation {}
 class LLoad extends LocalLoadOperation {
+	get type(): LocalType { return 'long' }
 	get doubleWidth() { return true }
 }
 class LMul extends MulOperation {}
@@ -404,7 +431,9 @@ class LRem extends RemOperation {}
 class LReturn extends ReturnOperation {}
 class LShiftLeft extends ShiftLeftOpertaion {}
 class LShiftRight extends ShiftRightOperation {}
-class LStore extends LocalStoreOperation {}
+class LStore extends LocalStoreOperation {
+	get type(): LocalType { return 'long' }
+}
 class LSub extends SubOperation {}
 class LUShiftRight extends UShiftRightOperation {}
 class LXor extends XorOperation {}
@@ -421,7 +450,7 @@ class LoadConstant extends Operation {
 				exp = new IntegerLiteral(value as number)
 				break
 			case 'long':
-				exp = new IntegerLiteral(value as number, true)
+				exp = new IntegerLiteral(value as BigInt, true)
 				break
 			case 'float':
 				exp = new FloatLiteral(value as number)
@@ -441,15 +470,6 @@ class New extends Operation {
 		stack.push(new NewObject(this.clazz))
 	}
 }
-type Primitive
-	= 'boolean'
-	| 'char'
-	| 'float'
-	| 'double'
-	| 'byte'
-	| 'short'
-	| 'int'
-	| 'long'
 class NewPrimitiveArray extends NewArrayOperation {
 	constructor(public readonly name: Primitive) { super() }
 	get primitive() { return true }
@@ -580,7 +600,7 @@ interface InstructionLength {
 export type Code = Map<number, InstructionLength>
 
 interface LoadStoreConstructor {
-	new(index: number, isStatic: boolean): LocalLoadOperation | LocalStoreOperation
+	new(index: number, isStatic: boolean): LoadStoreOperation
 }
 function singleByteIndex(data: DataView, offset: number) {
 	const index = data.getUint8(offset)

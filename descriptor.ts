@@ -40,6 +40,7 @@ function parseDescriptor(descriptor: string, args: boolean): string[] {
 				break
 			case 'V':
 				if (arrDepth) throw new Error('Cannot have array of type void')
+				if (args) throw new Error('Cannot have void arg')
 				type = 'void'
 				break
 			case 'Z':
