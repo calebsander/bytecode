@@ -40,6 +40,7 @@ import {doubleWidthType, getArgTypes, getType} from './descriptor'
 import {LocalType, Primitive, varName} from './variable-types'
 
 const LDC = 0x12
+export const MONITOR_EXIT_MESSAGE = 'Cannot execute monitorexit'
 
 export type Stack = Expression[]
 export function forcePop(stack: Stack) {
@@ -495,6 +496,12 @@ class LoadConstant extends Operation {
 		}
 		stack.push(exp)
 	}
+}
+export class MonitorEnter extends Operation {
+	execute() { throw new Error('Cannot execute monitorenter') }
+}
+export class MonitorExit extends Operation {
+	execute() { throw new Error(MONITOR_EXIT_MESSAGE) }
 }
 class New extends Operation {
 	constructor(public readonly clazz: Class) { super() }
@@ -1394,6 +1401,12 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					break
 				case 0xc1:
 					({instruction, newOffset} = constantOperation(data, offset, InstanceOf, constantPool))
+					break
+				case 0xc2:
+					instruction = new MonitorEnter
+					break
+				case 0xc3:
+					instruction = new MonitorExit
 					break
 				default: throw new Error('Unknown opcode: 0x' + opCode.toString(16))
 			}

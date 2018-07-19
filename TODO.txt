@@ -4,7 +4,7 @@ Support Class constant
 
 Decompile fields
 
-Declare local variables
+Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
 
 Support try-catch
 

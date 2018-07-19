@@ -11,9 +11,20 @@ import {
 	Ternary,
 	UnaryOperation,
 	WhileStatement,
-	SwitchStatement
+	SwitchStatement,
+	SynchronizedStatement
 } from './ast'
-import {Code, forcePop, Goto, If, Jump, Stack, Switch} from './bytecode-parser'
+import {
+	Code,
+	forcePop,
+	Goto,
+	If,
+	Jump,
+	MonitorEnter,
+	MONITOR_EXIT_MESSAGE,
+	Stack,
+	Switch
+} from './bytecode-parser'
 
 interface LoopCounter {
 	count: number
@@ -23,6 +34,11 @@ type Loops = Map<number, LoopReference>
 class IfExceedsBoundsError extends Error {
 	constructor(public readonly instructionAfterIf: number) {
 		super('If statement exceeds block')
+	}
+}
+class MonitorExitError extends Error {
+	constructor(public readonly nextInstruction: number) {
+		super(MONITOR_EXIT_MESSAGE)
 	}
 }
 
@@ -60,14 +76,16 @@ function parseControlFlow(
 	    firstJumpForwardTarget: number, //index of the start of the else block, or after the if statement
 	    firstJumpBack = Infinity, //index of the target of the do-while jump back
 	    firstJumpBackSource: number, //index of the do-while jump
-	    firstSwitch = Infinity //index of tableswitch instruction
+	    firstSwitch = Infinity, //index of tableswitch instruction
+	    firstMonitor = Infinity //index of monitorenter instruction
 	for (let index = start; index < end;) {
 		const instructionLength = instructions.get(index)
-		if (!instructionLength) break // end of method
+		if (!instructionLength) throw new Error(`Missing instruction at ${index}`)
 		const {instruction, length} = instructionLength
 		const nextIndex = index + length
 		preceding.set(nextIndex, index)
 		if (instruction instanceof Switch) firstSwitch = Math.min(firstSwitch, index)
+		else if (instruction instanceof MonitorEnter) firstMonitor = Math.min(firstMonitor, index)
 		// Breaks and continues don't need to be processed as separate blocks
 		else if (instruction instanceof Jump && !(getBreak(index) || getContinue(index))) {
 			for (const offset of instruction.offsets) {
@@ -95,12 +113,22 @@ function parseControlFlow(
 		}
 		index = nextIndex
 	}
-	const firstControl = Math.min(firstJumpForward, firstJumpBack, firstSwitch, end)
+	const firstControl = Math.min(
+		firstJumpForward,
+		firstJumpBack,
+		firstSwitch,
+		firstMonitor,
+		end
+	)
 	for (let index = start; index < firstControl;) {
 		const instructionLength = instructions.get(index)
-		if (!instructionLength) break // end of method
+		if (!instructionLength) throw new Error(`Missing instruction at ${index}`)
 		const {instruction, length} = instructionLength
-		instruction.execute(stack, block)
+		try { instruction.execute(stack, block) }
+		catch (e) {
+			if (e.message === MONITOR_EXIT_MESSAGE) e = new MonitorExitError(index + length)
+			throw e
+		}
 		const breakLoop = getBreak(index)
 		if (breakLoop) {
 			block.push(new IfStatement(
@@ -333,6 +361,39 @@ function parseControlFlow(
 			parseControlFlow(
 				instructions,
 				breakIndex, end,
+				loopCounter, breaks, continues,
+				stack, block
+			)
+		}
+	}
+	else if (firstControl === firstMonitor) {
+		const obj = forcePop(stack)
+		const synchronizedStart = firstMonitor + instructions.get(firstMonitor)!.length
+		const synchronizedStack: Stack = []
+		const synchronizedBlock: Block = []
+		try {
+			parseControlFlow(
+				instructions,
+				synchronizedStart, end,
+				loopCounter, breaks, continues,
+				synchronizedStack, synchronizedBlock
+			)
+		}
+		catch (e) {
+			if (!(e instanceof MonitorExitError)) throw e
+			block.push(new SynchronizedStatement(obj, synchronizedBlock))
+			const instructionLength = instructions.get(e.nextInstruction)
+			let instructionAfterCatch: number | undefined
+			if (instructionLength) {
+				const {instruction} = instructionLength
+				if (instruction instanceof Goto) {
+					instructionAfterCatch = e.nextInstruction + instruction.offset
+				}
+			}
+			if (!instructionAfterCatch) throw new Error('Expected Goto after synchronized body')
+			parseControlFlow(
+				instructions,
+				instructionAfterCatch, end,
 				loopCounter, breaks, continues,
 				stack, block
 			)

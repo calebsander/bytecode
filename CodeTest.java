@@ -232,4 +232,11 @@ public class CodeTest {
 		if (o instanceof Long) return ((Long)o).longValue();
 		return o.hashCode();
 	}
+	public void monitors() {
+		synchronized (this.instanceList) {
+			this.instanceList.add(1.0);
+			this.instanceList.add(2.0);
+			this.instanceList.add(3.0);
+		}
+	}
 }

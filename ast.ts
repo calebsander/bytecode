@@ -575,6 +575,34 @@ export class SwitchStatement extends Statement {
 		]
 	}
 }
+export class SynchronizedStatement extends Statement {
+	constructor(
+		public readonly obj: Expression,
+		public readonly block: Block
+	) { super() }
+	walkExpressions(handler: ExpressionHandler) {
+		this.obj.walk(handler)
+		for (const statement of this.block) statement.walkExpressions(handler)
+	}
+	walkStatements(handler: StatementHandler) {
+		handler(this)
+		for (const statement of this.block) statement.walkStatements(handler)
+	}
+	replace(replacements: Replacements) {
+		const {expressions} = replacements
+		return new SynchronizedStatement(
+			(expressions.get(this.obj) || this.obj).replace(expressions),
+			replaceBlock(this.block, replacements)
+		)
+	}
+	toSections(enclosingLoop?: LoopReference) {
+		return [
+			`synchronized (${this.obj.toString(true)}) {`,
+			new IndentedLines(blockToSections(this.block, enclosingLoop)),
+			'}'
+		]
+	}
+}
 export type Block = Statement[]
 export const flatten = <T>(segments: T[][]): T[] =>
 	([] as T[]).concat(...segments)

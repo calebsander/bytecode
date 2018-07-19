@@ -1,13 +1,13 @@
 import {parseStruct, parseShort} from './parse'
 import {Attribute, attributesParser} from './attributes-parser'
 import {bytecodeParser, Code, MethodContext} from './bytecode-parser'
-import {ExceptionTable, exceptionTableParser} from './exception-table-parser'
+import {ExceptionTableEntry, exceptionTableParser} from './exception-table-parser'
 
 export interface CodeAttribute {
 	maxStack: number
 	maxLocals: number
 	instructions: Code
-	exceptionTable: ExceptionTable
+	exceptionTable: ExceptionTableEntry[]
 	attributes: Attribute[]
 }
 
