@@ -47,13 +47,6 @@ export function forcePop(stack: Stack) {
 	if (!stackTop) throw new Error('Empty stack')
 	return stackTop
 }
-function flushStack(stack: Stack, block: Block) {
-	for (const exp of stack) block.push(new ExpressionStatement(exp))
-	stack.length = 0
-}
-
-const isDoubleWidth = ({descriptor}: NameAndType) =>
-	doubleWidthType(getType(descriptor))
 
 export abstract class Operation {
 	abstract execute(stack: Stack, block: Block): void
@@ -111,30 +104,33 @@ abstract class ArrayStoreOperation extends Operation {
 }
 abstract class ReturnOperation extends Operation {
 	execute(stack: Stack, block: Block) {
-		const returnVal = forcePop(stack)
-		flushStack(stack, block)
-		block.push(new ReturnStatement(returnVal))
+		block.push(new ReturnStatement(forcePop(stack)))
 	}
 }
 abstract class InvokeOperation extends Operation {
 	private readonly argsLength: number
+	private readonly isVoid: boolean
 	private readonly doubleWidth: boolean
 	constructor(
 		public readonly className: string,
 		public readonly method: Ref
 	) {
 		super()
-		this.argsLength = getArgTypes(method.nameAndType.descriptor).length
-		this.doubleWidth = isDoubleWidth(method.nameAndType)
+		const {descriptor} = method.nameAndType
+		this.argsLength = getArgTypes(descriptor).length
+		const returnType = getType(descriptor)
+		this.isVoid = returnType === 'void'
+		this.doubleWidth = doubleWidthType(returnType)
 	}
 	get isStatic() { return false }
-	execute(stack: Stack) {
+	execute(stack: Stack, block: Block) {
 		const {class: clazz, nameAndType} = this.method
 		const args = new Array<Expression>(this.argsLength)
 		for (let i = this.argsLength - 1; i >= 0; i--) args[i] = forcePop(stack)
 		const obj = this.isStatic
-			? new ClassReference(this.method.class)
+			? new ClassReference(clazz)
 			: forcePop(stack)
+		let result: Expression | undefined
 		if (nameAndType.name === '<init>') {
 			if (obj instanceof NewObject) {
 				if (obj.args) throw new Error('Already initialized')
@@ -142,11 +138,15 @@ abstract class InvokeOperation extends Operation {
 			}
 			else if (obj instanceof ThisLiteral) {
 				const thisObj = new ThisLiteral(clazz.name !== this.className)
-				stack.push(new FunctionCall(thisObj, null, args, false))
+				result = new FunctionCall(thisObj, null, args, false)
 			}
 			else throw new Error('Unexpected <init>() call')
 		}
-		else stack.push(new FunctionCall(obj, nameAndType, args, this.doubleWidth))
+		else result = new FunctionCall(obj, nameAndType, args, this.doubleWidth)
+		if (result) {
+			if (this.isVoid) block.push(new ExpressionStatement(result))
+			else stack.push(result)
+		}
 	}
 }
 abstract class NewArrayOperation extends Operation {
@@ -154,6 +154,17 @@ abstract class NewArrayOperation extends Operation {
 	abstract readonly primitive: boolean
 	execute(stack: Stack) {
 		stack.push(new NewArray(this, forcePop(stack), this.primitive))
+	}
+}
+abstract class FieldOperation extends Operation {
+	public readonly clazz: Class
+	public readonly nameAndType: NameAndType
+	protected readonly doubleWidth: boolean
+	constructor({class: clazz, nameAndType}: Ref) {
+		super()
+		this.clazz = clazz
+		this.nameAndType = nameAndType
+		this.doubleWidth = doubleWidthType(getType(nameAndType.descriptor))
 	}
 }
 abstract class BinaryOpOperation extends Operation {
@@ -335,17 +346,20 @@ class FStore extends LocalStoreOperation {
 	get type(): LocalType { return 'float' }
 }
 class FSub extends SubOperation {}
-class GetStatic extends Operation {
-	private readonly doubleWidth: boolean
-	constructor(public readonly field: Ref) {
-		super()
-		this.doubleWidth = isDoubleWidth(field.nameAndType)
-	}
+class GetField extends FieldOperation {
 	execute(stack: Stack) {
-		const {nameAndType} = this.field
 		stack.push(new FieldAccess(
-			new ClassReference(this.field.class),
-			nameAndType,
+			forcePop(stack),
+			this.nameAndType,
+			this.doubleWidth
+		))
+	}
+}
+class GetStatic extends FieldOperation {
+	execute(stack: Stack) {
+		stack.push(new FieldAccess(
+			new ClassReference(this.clazz),
+			this.nameAndType,
 			this.doubleWidth
 		))
 	}
@@ -505,9 +519,38 @@ class Pop extends Operation {
 		}
 	}
 }
-class Return extends Operation {
+class PutField extends FieldOperation {
 	execute(stack: Stack, block: Block) {
-		flushStack(stack, block)
+		const value = forcePop(stack),
+		      obj   = forcePop(stack)
+		block.push(new ExpressionStatement(
+			new Assignment(
+				new FieldAccess(
+					obj,
+					this.nameAndType,
+					this.doubleWidth
+				),
+				value
+			)
+		))
+	}
+}
+class PutStatic extends FieldOperation {
+	execute(stack: Stack, block: Block) {
+		block.push(new ExpressionStatement(
+			new Assignment(
+				new FieldAccess(
+					new ClassReference(this.clazz),
+					this.nameAndType,
+					this.doubleWidth
+				),
+				forcePop(stack)
+			)
+		))
+	}
+}
+class Return extends Operation {
+	execute(_: Stack, block: Block) {
 		block.push(new ReturnStatement(null))
 	}
 }
@@ -630,6 +673,16 @@ interface JumpConstructor {
 function jumpOperation(data: DataView, offset: number, clazz: JumpConstructor) {
 	const {result: jumpOffset, length} = parseSignedShort(data, offset)
 	return {instruction: new clazz(jumpOffset), newOffset: offset + length}
+}
+interface FieldConstructor {
+	new(field: Ref): FieldOperation
+}
+function fieldOperation(data: DataView, offset: number, clazz: FieldConstructor, constantPool: ConstantPool) {
+	const {result: field, length} = constantParser(slice(data, offset))
+	return {
+		instruction: new clazz(field.getValue(constantPool)),
+		newOffset: offset + length
+	}
 }
 const parseSignedByte = (data: DataView, offset: number) =>
 	({result: data.getInt8(offset), length: 1})
@@ -1239,12 +1292,18 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 				case 0xb1:
 					instruction = new Return
 					break
-				case 0xb2: {
-					const {result: field, length} = constantParser(slice(data, offset))
-					instruction = new GetStatic(field.getValue(constantPool))
-					offset += length
+				case 0xb2:
+					({instruction, newOffset} = fieldOperation(data, offset, GetStatic, constantPool))
 					break
-				}
+				case 0xb3:
+					({instruction, newOffset} = fieldOperation(data, offset, PutStatic, constantPool))
+					break
+				case 0xb4:
+					({instruction, newOffset} = fieldOperation(data, offset, GetField, constantPool))
+					break
+				case 0xb5:
+					({instruction, newOffset} = fieldOperation(data, offset, PutField, constantPool))
+					break
 				case 0xb6: {
 					const {result: method, length} = constantParser(slice(data, offset))
 					instruction = new InvokeVirtual(className, method.getValue(constantPool))

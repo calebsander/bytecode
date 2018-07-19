@@ -1,5 +1,7 @@
 Parse all the instructions
 
+Support Class constant
+
 Decompile fields
 
 Declare local variables

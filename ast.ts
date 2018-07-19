@@ -175,7 +175,7 @@ export class Ternary extends Expression {
 }
 export class Assignment extends Expression {
 	constructor(
-		public readonly lhs: Variable | ArrayAccess,
+		public readonly lhs: Variable | ArrayAccess | FieldAccess,
 		public readonly rhs: Expression
 	) { super() }
 	get doubleWidth() { return this.rhs.doubleWidth }

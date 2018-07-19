@@ -1,6 +1,10 @@
 import java.util.ArrayList;
+import java.util.List;
 
 public class CodeTest {
+	static int staticInt;
+	List<Double> instanceList = new ArrayList<>();
+
 	public CodeTest t() {
 		return this;
 	}
@@ -207,5 +211,14 @@ public class CodeTest {
 				result = 3;
 		}
 		return result;
+	}
+	public double staticField() {
+		staticInt = 100;
+		return staticInt;
+	}
+	public int instanceField() {
+		double newItem = Math.random() * 100;
+		this.instanceList.add(newItem);
+		return this.instanceList.size();
 	}
 }

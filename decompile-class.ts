@@ -21,11 +21,6 @@ const ACCESS_FLAGS_KEYS: (keyof AccessFlags)[] = [
 const accessFlagsToString = (flags: AccessFlags) =>
 	ACCESS_FLAGS_KEYS.map(key => flags[key] ? key + ' ' : '').join('')
 
-const convertTypeString = (type: string, imports: Set<string>) =>
-	type.includes('/')
-		? convertClassString(type, imports)
-		: type
-
 function classToSections(clazz: ClassFile): Section[] {
 	const {accessFlags, constantPool, methods, thisClass, superClass} = clazz
 	const className = thisClass.getValue(constantPool).name
@@ -53,7 +48,7 @@ function classToSections(clazz: ClassFile): Section[] {
 		const params: string[] = []
 		let paramLocalIndex = accessFlags.static ? 0 : 1
 		for (const type of getArgTypes(descriptorString)) {
-			params.push(`${convertTypeString(type, imports)} ${varName(paramLocalIndex)}`)
+			params.push(`${convertClassString(type, imports)} ${varName(paramLocalIndex)}`)
 			paramLocalIndex += doubleWidthType(type) ? 2 : 1
 		}
 		const declarations: string[] = []
@@ -72,7 +67,7 @@ function classToSections(clazz: ClassFile): Section[] {
 			accessFlagsToString(accessFlags) +
 				(nameString === '<init>'
 					? className
-					: convertTypeString(getType(descriptorString), imports) + ' ' +
+					: convertClassString(getType(descriptorString), imports) + ' ' +
 						nameString
 				) +
 				`(${params.join(', ')}) {`,

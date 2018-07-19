@@ -328,6 +328,8 @@ export function cleanup(block: Block): Block {
 	return block
 }
 export function convertClassString(clazz: string, imports: Set<string>) {
+	if (!clazz.includes('/')) return clazz
+
 	const dotString = clazz.replace(/\//g, '.')
 	if (!dotString.startsWith('java.lang.')) imports.add(dotString)
 	const [clazzName] = dotString.split('.').slice(-1)
