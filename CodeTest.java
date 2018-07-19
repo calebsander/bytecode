@@ -221,4 +221,15 @@ public class CodeTest {
 		this.instanceList.add(newItem);
 		return this.instanceList.size();
 	}
+	public boolean cast() {
+		Object o = this.instanceList;
+		return ((List)o).isEmpty();
+	}
+	public double toDouble(Object o) {
+		if (o instanceof Double) return ((Double)o).doubleValue();
+		if (o instanceof Float) return ((Float)o).floatValue();
+		if (o instanceof Integer) return ((Integer)o).intValue();
+		if (o instanceof Long) return ((Long)o).longValue();
+		return o.hashCode();
+	}
 }

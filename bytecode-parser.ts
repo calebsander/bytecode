@@ -410,6 +410,16 @@ class ILoad extends LocalLoadOperation {
 }
 class IMul extends MulOperation {}
 class INeg extends NegOperation {}
+class InstanceOf extends Operation {
+	constructor(public readonly clazz: Class) { super() }
+	execute(stack: Stack) {
+		stack.push(new BinaryOperation(
+			'instanceof',
+			forcePop(stack),
+			new ClassReference(this.clazz)
+		))
+	}
+}
 class IOr extends OrOperation {}
 class IRem extends RemOperation {}
 class IReturn extends ReturnOperation {}
@@ -674,10 +684,16 @@ function jumpOperation(data: DataView, offset: number, clazz: JumpConstructor) {
 	const {result: jumpOffset, length} = parseSignedShort(data, offset)
 	return {instruction: new clazz(jumpOffset), newOffset: offset + length}
 }
-interface FieldConstructor {
-	new(field: Ref): FieldOperation
+type Constant = Ref | Class | LiteralConstant
+interface ConstantConstructor<E extends Constant> {
+	new(constant: E): Operation
 }
-function fieldOperation(data: DataView, offset: number, clazz: FieldConstructor, constantPool: ConstantPool) {
+function constantOperation<E extends Constant>(
+	data: DataView,
+	offset: number,
+	clazz: ConstantConstructor<E>,
+	constantPool: ConstantPool
+) {
 	const {result: field, length} = constantParser(slice(data, offset))
 	return {
 		instruction: new clazz(field.getValue(constantPool)),
@@ -807,8 +823,7 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new DConst(1)
 					break
 				case 0x10: {
-					const value = data.getInt8(offset)
-					offset++
+					const value = data.getInt8(offset++)
 					instruction = new IConst(value)
 					break
 				}
@@ -826,12 +841,9 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new LoadConstant(constant)
 					break
 				}
-				case 0x14: {
-					const {result: constant, length} = constantParser(slice(data, offset))
-					instruction = new LoadConstant(constant.getValue(constantPool))
-					offset += length
+				case 0x14:
+					({instruction, newOffset} = constantOperation(data, offset, LoadConstant, constantPool))
 					break
-				}
 				case 0x15:
 					({instruction, newOffset} = localOperation(data, offset, ILoad))
 					break
@@ -1293,16 +1305,16 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new Return
 					break
 				case 0xb2:
-					({instruction, newOffset} = fieldOperation(data, offset, GetStatic, constantPool))
+					({instruction, newOffset} = constantOperation(data, offset, GetStatic, constantPool))
 					break
 				case 0xb3:
-					({instruction, newOffset} = fieldOperation(data, offset, PutStatic, constantPool))
+					({instruction, newOffset} = constantOperation(data, offset, PutStatic, constantPool))
 					break
 				case 0xb4:
-					({instruction, newOffset} = fieldOperation(data, offset, GetField, constantPool))
+					({instruction, newOffset} = constantOperation(data, offset, GetField, constantPool))
 					break
 				case 0xb5:
-					({instruction, newOffset} = fieldOperation(data, offset, PutField, constantPool))
+					({instruction, newOffset} = constantOperation(data, offset, PutField, constantPool))
 					break
 				case 0xb6: {
 					const {result: method, length} = constantParser(slice(data, offset))
@@ -1368,24 +1380,21 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new NewPrimitiveArray(primitive)
 					break
 				}
-				case 0xbd: {
-					const {result: clazz, length} = constantParser(slice(data, offset))
-					instruction = new ANewArray(clazz.getValue(constantPool))
-					offset += length
+				case 0xbd:
+					({instruction, newOffset} = constantOperation(data, offset, ANewArray, constantPool))
 					break
-				}
 				case 0xbe:
 					instruction = new ArrayLength
 					break
 				case 0xbf:
 					instruction = new AThrow
 					break
-				case 0xc0: {
-					const {result: clazz, length} = constantParser(slice(data, offset))
-					instruction = new CheckCast(clazz.getValue(constantPool))
-					offset += length
+				case 0xc0:
+					({instruction, newOffset} = constantOperation(data, offset, CheckCast, constantPool))
 					break
-				}
+				case 0xc1:
+					({instruction, newOffset} = constantOperation(data, offset, InstanceOf, constantPool))
+					break
 				default: throw new Error('Unknown opcode: 0x' + opCode.toString(16))
 			}
 			if (newOffset !== undefined) offset = newOffset
@@ -1403,6 +1412,7 @@ process.on('exit', () => {
 			.map(x => '0x' + x.toString(16))
 	)
 	let i: number
-	for (i = 0xaa; bytecodesFound.has(i); i++); //skip dup/swap and jsr/ret instructions
+	//Skip dup/swap, jsr/ret, and invokedynamic instructions
+	for (i = 0xbb; bytecodesFound.has(i); i++);
 	console.log('0x' + i.toString(16))
 })

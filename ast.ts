@@ -113,6 +113,7 @@ export type BinaryOp
 	| '==' | '!='
 	| '&' | '^' | '|'
 	| '&&' | '||'
+	| 'instanceof'
 export class BinaryOperation extends Expression {
 	constructor(
 		public readonly op: BinaryOp,
