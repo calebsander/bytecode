@@ -34,7 +34,7 @@ export class IntegerLiteral extends PrimitiveExpression {
 		public readonly doubleWidth = false
 	) { super() }
 	toString() {
-		return String(this.i) + (this.doubleWidth ? 'L' : '')
+		return `${this.i}${this.doubleWidth ? 'L' : ''}`
 	}
 }
 export class FloatLiteral extends PrimitiveExpression {
@@ -43,36 +43,28 @@ export class FloatLiteral extends PrimitiveExpression {
 		public readonly doubleWidth = false
 	) { super() }
 	toString() {
-		return String(this.f) + (this.doubleWidth ? '' : 'F')
+		return `${this.f}${this.doubleWidth ? '' : 'F'}`
 	}
 }
 export class BooleanLiteral extends PrimitiveExpression {
 	constructor(public readonly b: boolean) { super() }
-	get doubleWidth() {
-		return false
-	}
-	toString() { return String(this.b) }
+	get doubleWidth() { return false }
+	toString() { return `${this.b}` }
 }
 export class StringLiteral extends PrimitiveExpression {
 	constructor(public readonly str: string) { super() }
-	get doubleWidth() {
-		return false
-	}
+	get doubleWidth() { return false }
 	toString() {
-		return '"' + String(this.str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')) + '"'
+		return `"${this.str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 	}
 }
 export class NullLiteral extends PrimitiveExpression {
-	get doubleWidth() {
-		return false
-	}
+	get doubleWidth() { return false }
 	toString() { return 'null' }
 }
 export class ThisLiteral extends PrimitiveExpression {
 	constructor(public readonly isSuper = false) { super() }
-	get doubleWidth() {
-		return false
-	}
+	get doubleWidth() { return false }
 	toString() { return this.isSuper ? 'super' : 'this' }
 }
 export class Variable extends PrimitiveExpression {
@@ -93,9 +85,7 @@ export class UnaryOperation extends Expression {
 		public readonly op: UnaryOp,
 		public readonly arg: Expression
 	) { super() }
-	get doubleWidth() {
-		return this.arg.doubleWidth
-	}
+	get doubleWidth() { return this.arg.doubleWidth }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.arg.walk(handler)
@@ -148,11 +138,8 @@ export class BinaryOperation extends Expression {
 		)
 	}
 	toString(omitParens?: boolean) {
-		const insideParens =
-			this.arg1.toString() + ' ' +
-			this.op + ' ' +
-			this.arg2.toString()
-		return omitParens ? insideParens : '(' + insideParens + ')'
+		const insideParens = `${this.arg1.toString()} ${this.op} ${this.arg2.toString()}`
+		return omitParens ? insideParens : `(${insideParens})`
 	}
 }
 export class Ternary extends Expression {
@@ -182,10 +169,8 @@ export class Ternary extends Expression {
 	}
 	toString(omitParens?: boolean) {
 		const insideParens =
-			this.cond.toString() + ' ? ' +
-			this.ifTrue.toString() + ' : ' +
-			this.ifFalse.toString()
-		return omitParens ? insideParens : '(' + insideParens + ')'
+			`${this.cond.toString()} ? ${this.ifTrue.toString()} : ${this.ifFalse.toString()}`
+		return omitParens ? insideParens : `(${insideParens})`
 	}
 }
 export class Assignment extends Expression {
@@ -193,9 +178,7 @@ export class Assignment extends Expression {
 		public readonly lhs: Variable | ArrayAccess,
 		public readonly rhs: Expression
 	) { super() }
-	get doubleWidth() {
-		return this.rhs.doubleWidth
-	}
+	get doubleWidth() { return this.rhs.doubleWidth }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.rhs.walk(handler) //don't think there is any need to walk the LHS
@@ -208,7 +191,7 @@ export class Assignment extends Expression {
 	}
 	toString(omitParens?: boolean) {
 		const insideParens = this.lhs.toString() + ' = ' + this.rhs.toString(true) //are parens needed on RHS?
-		return omitParens ? insideParens : '(' + insideParens + ')'
+		return omitParens ? insideParens : `(${insideParens})`
 	}
 }
 interface NameReference {
@@ -216,9 +199,7 @@ interface NameReference {
 }
 export class ClassReference extends PrimitiveExpression {
 	constructor(public readonly clazz: NameReference) { super() }
-	get doubleWidth() {
-		return false
-	}
+	get doubleWidth() { return false }
 	toString() { return this.clazz.name }
 }
 export class FunctionCall extends Expression {
@@ -246,8 +227,8 @@ export class FunctionCall extends Expression {
 	toString() {
 		const {obj, func, args} = this
 		return obj.toString() +
-			(func ? '.' + func.name : '') +
-			'(' + args.map(arg => arg.toString(true)).join(', ') + ')'
+		       (func ? '.' + func.name : '') +
+		       `(${args.map(arg => arg.toString(true)).join(', ')})`
 	}
 }
 export class FieldAccess extends Expression {
@@ -268,7 +249,7 @@ export class FieldAccess extends Expression {
 		)
 	}
 	toString() {
-		return this.obj.toString() + '.' + this.field.name
+		return `${this.obj.toString()}.${this.field.name}`
 	}
 }
 export class ArrayAccess extends Expression {
@@ -290,15 +271,13 @@ export class ArrayAccess extends Expression {
 		)
 	}
 	toString() {
-		return this.arr.toString() + '[' + this.index.toString(true) + ']'
+		return `${this.arr.toString()}[${this.index.toString(true)}]`
 	}
 }
 export class NewObject extends Expression {
 	public args?: Expression[]
 	constructor(public readonly clazz: NameReference) { super() }
-	get doubleWidth() {
-		return false
-	}
+	get doubleWidth() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		for (const arg of this.args || []) arg.walk(handler)
@@ -314,8 +293,8 @@ export class NewObject extends Expression {
 	}
 	toString() {
 		if (!this.args) throw new Error('No arguments given to constructor')
-		return 'new ' + this.clazz.name +
-		       '(' + this.args.map(arg => arg.toString(true)).join(', ') + ')'
+		return `new ${this.clazz.name}` +
+		       `(${this.args.map(arg => arg.toString(true)).join(', ')})`
 	}
 }
 export class NewArray extends Expression {
@@ -324,9 +303,7 @@ export class NewArray extends Expression {
 		public readonly length: Expression,
 		public readonly primitive: boolean
 	) { super() }
-	get doubleWidth() {
-		return false
-	}
+	get doubleWidth() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.length.walk(handler)
@@ -339,7 +316,7 @@ export class NewArray extends Expression {
 		)
 	}
 	toString() {
-		return 'new ' + this.type.name + '[' + this.length.toString(true) + ']'
+		return `new ${this.type.name}[${this.length.toString(true)}]`
 	}
 }
 export class Cast extends Expression {
@@ -364,8 +341,8 @@ export class Cast extends Expression {
 		)
 	}
 	toString(omitParens?: boolean) {
-		const insideParens = '(' + this.type.name + ')' + this.exp.toString()
-		return omitParens ? insideParens : '(' + insideParens + ')'
+		const insideParens = `(${this.type.name})${this.exp.toString()}`
+		return omitParens ? insideParens : `(${insideParens})`
 	}
 }
 
@@ -404,7 +381,7 @@ export class BreakStatement extends PrimitiveStatement {
 	walkExpressions() {}
 	replace() { return this }
 	toSections(enclosingLoop?: LoopReference) {
-		return ['break' + (enclosingLoop === this.loop ? '' : ' ' + this.loop.label) + ';']
+		return [`break${enclosingLoop === this.loop ? '' : ' ' + this.loop.label};`]
 	}
 }
 export class ContinueStatement extends PrimitiveStatement {
@@ -412,7 +389,7 @@ export class ContinueStatement extends PrimitiveStatement {
 	walkExpressions() {}
 	replace() { return this }
 	toSections(enclosingLoop?: LoopReference) {
-		return ['continue' + (enclosingLoop === this.loop ? '' : ' ' + this.loop.label) + ';']
+		return [`continue${enclosingLoop === this.loop ? '' : ' ' + this.loop.label};`]
 	}
 }
 export class ReturnStatement extends PrimitiveStatement {
@@ -428,7 +405,7 @@ export class ReturnStatement extends PrimitiveStatement {
 		)
 	}
 	toSections() {
-		return ['return' + (this.exp ? ' ' + this.exp.toString(true) : '') + ';']
+		return [`return${this.exp ? ' ' + this.exp.toString(true) : ''};`]
 	}
 }
 export class ThrowStatement extends PrimitiveStatement {
@@ -440,7 +417,7 @@ export class ThrowStatement extends PrimitiveStatement {
 		)
 	}
 	toSections() {
-		return ['throw ' + this.err.toString(true) + ';']
+		return [`throw ${this.err.toString(true)};`]
 	}
 }
 export class IfStatement extends Statement {
@@ -468,7 +445,7 @@ export class IfStatement extends Statement {
 		)
 	}
 	toSections(enclosingLoop: LoopReference) {
-		const ifCond = 'if (' + this.cond.toString(true) + ') '
+		const ifCond = `if (${this.cond.toString(true)}) `
 		const ifSections = blockToSections(this.ifBlock, enclosingLoop)
 		const sections: Section[] = ifSections.length === 1
 			? [ifCond + ifSections[0]]
@@ -477,16 +454,26 @@ export class IfStatement extends Statement {
 					new IndentedLines(ifSections),
 					'}'
 				]
-		if (this.elseBlock.length) {
-			const elseSections = blockToSections(this.elseBlock, enclosingLoop)
-			sections.push(...(elseSections.length === 1
-				? ['else ' + elseSections[0]]
-				: [
-						'else {',
-						new IndentedLines(elseSections),
-						'}'
-					]
-			))
+		const {elseBlock} = this
+		if (!elseBlock.length) return sections
+
+		if (elseBlock.length === 1 && elseBlock[0] instanceof IfStatement) {
+			const elseSections = elseBlock[0].toSections(enclosingLoop)
+			elseSections[0] = `else ${elseSections[0] as string}`
+			sections.push(...elseSections)
+		}
+		else {
+			const elseSections = blockToSections(elseBlock, enclosingLoop)
+			if (elseSections.length === 1 && typeof elseSections[0] === 'string') {
+				sections.push('else ' + elseSections[0])
+			}
+			else {
+				sections.push(
+					'else {',
+					new IndentedLines(elseSections),
+					'}'
+				)
+			}
 		}
 		return sections
 	}
@@ -518,12 +505,12 @@ export class WhileStatement extends Statement {
 	toSections() {
 		const blockSections = blockToSections(this.block, this.label)
 		const labelString = isLabelNeeded(this) ? this.label.label + ': ' : ''
-		const whileCond = 'while (' + this.cond.toString(true) + ')'
+		const whileCond = `while (${this.cond.toString(true)})`
 		if (this.doWhile) {
 			return [
 				labelString + 'do {',
 				new IndentedLines(blockSections),
-				'} ' + whileCond + ';'
+				`} ${whileCond};`
 			]
 		}
 		else {
@@ -581,7 +568,7 @@ export class SwitchStatement extends Statement {
 		}
 		const labelString = isLabelNeeded(this) ? this.label.label + ': ' : ''
 		return [
-			labelString + 'switch (' + this.val.toString(true) + ') {',
+			`${labelString}switch (${this.val.toString(true)}) {`,
 			new IndentedLines(innerSections),
 			'}'
 		]

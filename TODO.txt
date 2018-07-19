@@ -2,8 +2,6 @@ Decompile fields
 
 Declare local variables
 
-Stringify "else if" more nicely
-
 Support try-catch
 
 Identify +=, |=, etc.; also move the varN++ special case to a CleanupStrategy
