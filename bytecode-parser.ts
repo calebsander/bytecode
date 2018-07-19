@@ -154,7 +154,7 @@ abstract class NewArrayOperation extends Operation {
 	abstract readonly name: string
 	abstract readonly primitive: boolean
 	execute(stack: Stack) {
-		stack.push(new NewArray(this, forcePop(stack), this.primitive))
+		stack.push(new NewArray(this, [forcePop(stack)], this.primitive))
 	}
 }
 abstract class FieldOperation extends Operation {
@@ -500,8 +500,26 @@ class LoadConstant extends Operation {
 export class MonitorEnter extends Operation {
 	execute() { throw new Error('Cannot execute monitorenter') }
 }
-export class MonitorExit extends Operation {
+class MonitorExit extends Operation {
 	execute() { throw new Error(MONITOR_EXIT_MESSAGE) }
+}
+class MultiANewArray extends Operation {
+	constructor(
+		public readonly clazz: Class,
+		public readonly dimensions: number
+	) {
+		super()
+		const name = getType(clazz.name)
+		const braces = '[]'.repeat(dimensions)
+		if (!name.endsWith(braces)) throw new Error('Array type has wrong dimensionality')
+		clazz.name = name.slice(0, -braces.length)
+	}
+	execute(stack: Stack) {
+		const {dimensions} = this
+		const args = new Array<Expression>(dimensions)
+		for (let i = dimensions - 1; i >= 0; i--) args[i] = forcePop(stack)
+		stack.push(new NewArray(this.clazz, args, false))
+	}
 }
 class New extends Operation {
 	constructor(public readonly clazz: Class) { super() }
@@ -701,9 +719,9 @@ function constantOperation<E extends Constant>(
 	clazz: ConstantConstructor<E>,
 	constantPool: ConstantPool
 ) {
-	const {result: field, length} = constantParser(slice(data, offset))
+	const {result, length} = constantParser(slice(data, offset))
 	return {
-		instruction: new clazz(field.getValue(constantPool)),
+		instruction: new clazz(result.getValue(constantPool)),
 		newOffset: offset + length
 	}
 }
@@ -848,6 +866,7 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new LoadConstant(constant)
 					break
 				}
+				//case 0x13 (wide ldc) handled above
 				case 0x14:
 					({instruction, newOffset} = constantOperation(data, offset, LoadConstant, constantPool))
 					break
@@ -1408,6 +1427,14 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 				case 0xc3:
 					instruction = new MonitorExit
 					break
+				//case 0xc4 (wide) handled above
+				case 0xc5: {
+					const {result: clazz, length} = constantParser(slice(data, offset))
+					offset += length
+					const dimensions = data.getUint8(offset++)
+					instruction = new MultiANewArray(clazz.getValue(constantPool), dimensions)
+					break
+				}
 				default: throw new Error('Unknown opcode: 0x' + opCode.toString(16))
 			}
 			if (newOffset !== undefined) offset = newOffset

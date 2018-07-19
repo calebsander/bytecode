@@ -191,7 +191,7 @@ export class Assignment extends Expression {
 		)
 	}
 	toString(omitParens?: boolean) {
-		const insideParens = this.lhs.toString() + ' = ' + this.rhs.toString(true) //are parens needed on RHS?
+		const insideParens = `${this.lhs.toString()} = ${this.rhs.toString(true)}` //are parens needed on RHS?
 		return omitParens ? insideParens : `(${insideParens})`
 	}
 }
@@ -294,30 +294,37 @@ export class NewObject extends Expression {
 	}
 	toString() {
 		if (!this.args) throw new Error('No arguments given to constructor')
-		return `new ${this.clazz.name}` +
-		       `(${this.args.map(arg => arg.toString(true)).join(', ')})`
+		return `new ${this.clazz.name}(${this.args
+			.map(arg => arg.toString(true))
+			.join(', ')
+		})`
 	}
 }
 export class NewArray extends Expression {
 	constructor(
 		public readonly type: NameReference,
-		public readonly length: Expression,
+		public readonly dimensions: Expression[],
 		public readonly primitive: boolean
 	) { super() }
 	get doubleWidth() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
-		this.length.walk(handler)
+		for (const dimension of this.dimensions) dimension.walk(handler)
 	}
 	replace(replacements: Map<Expression, Expression>) {
 		return new NewArray(
 			this.type,
-			(replacements.get(this.length) || this.length).replace(replacements),
+			this.dimensions.map(dimension =>
+				(replacements.get(dimension) || dimension).replace(replacements)
+			),
 			this.primitive
 		)
 	}
 	toString() {
-		return `new ${this.type.name}[${this.length.toString(true)}]`
+		return `new ${this.type.name}${this.dimensions
+			.map(dimension => `[${dimension.toString(true)}]`)
+			.join('')
+		}`
 	}
 }
 export class Cast extends Expression {

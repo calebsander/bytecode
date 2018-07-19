@@ -354,7 +354,7 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 		else if (expression instanceof NewArray && !expression.primitive) {
 			replacements.set(expression, new NewArray(
 				{name: convertClassString(expression.type.name, imports)},
-				expression.length,
+				expression.dimensions,
 				expression.primitive
 			))
 		}
