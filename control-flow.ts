@@ -13,7 +13,7 @@ import {
 	WhileStatement,
 	SwitchStatement
 } from './ast'
-import {Code, forcePop, Goto, If, Jump, Stack, TableSwitch} from './bytecode-parser'
+import {Code, forcePop, Goto, If, Jump, Stack, Switch} from './bytecode-parser'
 
 interface LoopCounter {
 	count: number
@@ -67,7 +67,7 @@ function parseControlFlow(
 		const {instruction, length} = instructionLength
 		const nextIndex = index + length
 		preceding.set(nextIndex, index)
-		if (instruction instanceof TableSwitch) firstSwitch = Math.min(firstSwitch, index)
+		if (instruction instanceof Switch) firstSwitch = Math.min(firstSwitch, index)
 		// Breaks and continues don't need to be processed as separate blocks
 		else if (instruction instanceof Jump && !(getBreak(index) || getContinue(index))) {
 			for (const offset of instruction.offsets) {
@@ -258,7 +258,7 @@ function parseControlFlow(
 		)
 	}
 	else if (firstControl === firstSwitch) {
-		const {offsetMap, defaultOffset} = instructions.get(firstSwitch)!.instruction as TableSwitch
+		const {offsetMap, defaultOffset} = instructions.get(firstSwitch)!.instruction as Switch
 		const caseStartSet = new Set<number>()
 		const inverseJumpMap = new Map<number, (number | null)[]>() //map of case starts to values which hit that case
 		const offsetMapWithDefault = new Map<number | null, number>(offsetMap)

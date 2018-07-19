@@ -1,4 +1,12 @@
-import {Parser, parseInt, parseByteArray, parseAndThen, parseReturn, parseTimes, slice} from './parse'
+import {
+	parseInt,
+	parseByteArray,
+	parseAndThen,
+	parseReturn,
+	parseStruct,
+	parseTimes,
+	slice
+} from './parse'
 import {
 	ArrayAccess,
 	Assignment,
@@ -511,7 +519,9 @@ class SPush extends Operation {
 		stack.push(new IntegerLiteral(this.i, false))
 	}
 }
-export class TableSwitch extends Operation { //doesn't function much like a simple jump, so not subclassed from Jump
+//Used for both tableswitch and lookupswitch
+//Doesn't function much like a simple jump, so not subclassed from Jump
+export class Switch extends Operation {
 	constructor(
 		public readonly offsetMap: Map<number, number>,
 		public readonly defaultOffset: number
@@ -626,7 +636,7 @@ const parseSignedByte = (data: DataView, offset: number) =>
 const parseSignedShort = (data: DataView, offset: number) =>
 	({result: data.getInt16(offset), length: 2})
 const parseSignedInt = parseAndThen(parseInt, int => parseReturn(int | 0))
-const parseTableSwitch: Parser<TableSwitch> =
+const parseTableSwitch =
 	parseAndThen(parseSignedInt, defaultOffset =>
 		parseAndThen(parseSignedInt, low =>
 			parseAndThen(parseSignedInt, high =>
@@ -635,12 +645,36 @@ const parseTableSwitch: Parser<TableSwitch> =
 					jumpOffsets => {
 						const offsetMap = new Map<number, number>()
 						for (let i = low; i <= high; i++) offsetMap.set(i, jumpOffsets[i - low])
-						return parseReturn(new TableSwitch(offsetMap, defaultOffset))
+						return parseReturn(new Switch(offsetMap, defaultOffset))
 					}
 				)
 			)
 		)
 	)
+interface MatchOffsetPair {
+	match: number
+	offset: number
+}
+const parseMatchOffset = parseStruct<MatchOffsetPair>([
+	['match', parseSignedInt],
+	['offset', parseSignedInt]
+])
+const parseLookupSwitch =
+	parseAndThen(parseSignedInt, defaultOffset =>
+		parseAndThen(parseSignedInt, nPairs => {
+			if (nPairs < 0) throw new Error('nPairs must be nonnegative')
+			return parseAndThen(
+				parseTimes(parseMatchOffset, nPairs),
+				matchOffsets => {
+					const offsetMap = new Map<number, number>()
+					for (const {match, offset} of matchOffsets) offsetMap.set(match, offset)
+					return parseReturn(new Switch(offsetMap, defaultOffset))
+				}
+			)
+		})
+	)
+const pad = (offset: number) =>
+	offset + 3 - ((offset + 3) & 3) //0-3 bytes of padding
 
 const bytecodesFound = new Set<number>()
 
@@ -1174,8 +1208,15 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					({instruction, newOffset} = jumpOperation(data, offset, Goto))
 					break
 				case 0xaa: {
-					offset += 3 - ((offset + 3) % 4) //0-3 bytes of padding
+					offset = pad(offset)
 					const {result, length} = parseTableSwitch(slice(data, offset))
+					instruction = result
+					offset += length
+					break
+				}
+				case 0xab: {
+					offset = pad(offset)
+					const {result, length} = parseLookupSwitch(slice(data, offset))
 					instruction = result
 					offset += length
 					break

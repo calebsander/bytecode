@@ -195,4 +195,17 @@ public class CodeTest {
 		}
 		return a;
 	}
+	public int stringSwitch() {
+		int result = 0;
+		switch (this.getClass().getName().hashCode()) {
+			case -803337153: //"CodeTest".hashCode()
+				result = 1;
+			case -1939501217: //"Object".hashCode()
+				result++;
+				break;
+			default:
+				result = 3;
+		}
+		return result;
+	}
 }
