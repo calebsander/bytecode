@@ -39,7 +39,7 @@ function classToSections(clazz: ClassFile): Section[] {
 			if (parsedAttribute.type === CODE) {
 				({instructions} = parsedAttribute.value as CodeAttribute)
 				console.log(name.getValue(constantPool))
-				console.log(instructions)
+				if (instructions.size < 100) console.log(instructions)
 				console.log()
 				break
 			}

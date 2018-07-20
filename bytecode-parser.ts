@@ -40,6 +40,7 @@ import {doubleWidthType, getArgTypes, getType} from './descriptor'
 import {LocalType, Primitive, varName} from './variable-types'
 
 const LDC = 0x12
+const GOTO = 0xa7
 export const MONITOR_EXIT_MESSAGE = 'Cannot execute monitorexit'
 
 export type Stack = Expression[]
@@ -531,6 +532,9 @@ class NewPrimitiveArray extends NewArrayOperation {
 	constructor(public readonly name: Primitive) { super() }
 	get primitive() { return true }
 }
+class NoOp extends Operation {
+	execute() {}
+}
 class NullConst extends Operation {
 	execute(stack: Stack) {
 		stack.push(new NullLiteral)
@@ -610,10 +614,12 @@ export class Switch extends Operation {
 export abstract class Jump extends Operation {
 	abstract readonly offsets: Iterable<number>
 }
-export abstract class IfICmp extends Jump {
+export abstract class IfCondition extends Jump {
 	constructor(public readonly offset: number) { super() }
 	protected abstract readonly jumpOp: BinaryOp
-	get offsets() { return [3, this.offset] } //if_icmp* instruction is 3 bytes long
+	get offsets() { return [3, this.offset] } //if* instruction is 3 bytes long
+}
+abstract class IfICmp extends IfCondition {
 	execute(stack: Stack) {
 		const value2 = forcePop(stack), value1 = forcePop(stack)
 		stack.push(new BinaryOperation(this.jumpOp, value1, value2))
@@ -643,10 +649,7 @@ class IfICmpGt extends IfICmp {
 class IfICmpLe extends IfICmp {
 	get jumpOp(): BinaryOp { return '<=' }
 }
-export abstract class If extends Jump {
-	constructor(public readonly offset: number) { super() }
-	protected abstract readonly jumpOp: BinaryOp
-	get offsets() { return [3, this.offset] } //if* instruction is 3 bytes long
+abstract class If extends IfCondition {
 	execute(stack: Stack) {
 		stack.push(new BinaryOperation(
 			this.jumpOp,
@@ -672,6 +675,21 @@ class IfGt extends If {
 }
 class IfLe extends If {
 	get jumpOp(): BinaryOp { return '<=' }
+}
+abstract class IfNullCmp extends IfCondition {
+	execute(stack: Stack) {
+		stack.push(new BinaryOperation(
+			this.jumpOp,
+			forcePop(stack),
+			new NullLiteral
+		))
+	}
+}
+class IfNull extends IfNullCmp {
+	get jumpOp(): BinaryOp { return '==' }
+}
+class IfNonNull extends IfNullCmp {
+	get jumpOp(): BinaryOp { return '!=' }
 }
 export class Goto extends Jump {
 	constructor(public readonly offset: number) { super() }
@@ -705,8 +723,10 @@ function localOperation(data: DataView, offset: number, clazz: LoadStoreConstruc
 interface JumpConstructor {
 	new(offset: number): Jump
 }
-function jumpOperation(data: DataView, offset: number, clazz: JumpConstructor) {
-	const {result: jumpOffset, length} = parseSignedShort(data, offset)
+function jumpOperation(data: DataView, offset: number, clazz: JumpConstructor, wide = false) {
+	const {result: jumpOffset, length} = wide
+		? parseSignedInt(slice(data, offset))
+		: parseSignedShort(data, offset)
 	return {instruction: new clazz(jumpOffset), newOffset: offset + length}
 }
 type Constant = Ref | Class | LiteralConstant
@@ -798,10 +818,17 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 				wide = true
 				opCode = LDC
 			}
+			else if (opCode === 0xc8) { //wide goto
+				wide = true
+				opCode = GOTO
+			}
 			else wide = false
 			let instruction: Operation
 			let newOffset: number | undefined
 			switch (opCode) {
+				case 0x00:
+					instruction = new NoOp
+					break
 				case 0x01:
 					instruction = new NullConst
 					break
@@ -866,7 +893,7 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new LoadConstant(constant)
 					break
 				}
-				//case 0x13 (wide ldc) handled above
+				//case 0x13 (ldc_w) handled above
 				case 0x14:
 					({instruction, newOffset} = constantOperation(data, offset, LoadConstant, constantPool))
 					break
@@ -1295,8 +1322,8 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 				case 0xa6:
 					({instruction, newOffset} = jumpOperation(data, offset, IfACmpNe))
 					break
-				case 0xa7:
-					({instruction, newOffset} = jumpOperation(data, offset, Goto))
+				case GOTO:
+					({instruction, newOffset} = jumpOperation(data, offset, Goto, wide))
 					break
 				case 0xaa: {
 					offset = pad(offset)
@@ -1435,6 +1462,13 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new MultiANewArray(clazz.getValue(constantPool), dimensions)
 					break
 				}
+				case 0xc6:
+					({instruction, newOffset} = jumpOperation(data, offset, IfNull))
+					break
+				case 0xc7:
+					({instruction, newOffset} = jumpOperation(data, offset, IfNonNull))
+					break
+				//case 0xc8 (goto_w) handled above
 				default: throw new Error('Unknown opcode: 0x' + opCode.toString(16))
 			}
 			if (newOffset !== undefined) offset = newOffset

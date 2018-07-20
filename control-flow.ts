@@ -18,7 +18,7 @@ import {
 	Code,
 	forcePop,
 	Goto,
-	If,
+	IfCondition,
 	Jump,
 	MonitorEnter,
 	MONITOR_EXIT_MESSAGE,
@@ -57,7 +57,7 @@ function parseControlFlow(
 ): Block {
 	const getBreak = (index: number) => {
 		const {instruction} = instructions.get(index)!
-		if (instruction instanceof Goto || instruction instanceof If) {
+		if (instruction instanceof Goto || instruction instanceof IfCondition) {
 			const jumpTarget = index + instruction.offset
 			return breaks.get(jumpTarget)
 		}
@@ -65,7 +65,7 @@ function parseControlFlow(
 	}
 	const getContinue = (index: number) => {
 		const {instruction} = instructions.get(index)!
-		if (instruction instanceof Goto || instruction instanceof If) {
+		if (instruction instanceof Goto || instruction instanceof IfCondition) {
 			const jumpTarget = index + instruction.offset
 			return continues.get(jumpTarget)
 		}
@@ -210,7 +210,7 @@ function parseControlFlow(
 					if (e.instructionAfterIf === ifBlockEnd && !hasElseBlock) {
 						const cond2JumpIndex = preceding.get(ifBlockEnd)!
 						const cond2Jump = instructions.get(cond2JumpIndex)!.instruction
-						if (cond2Jump instanceof If) {
+						if (cond2Jump instanceof IfCondition) {
 							const falseIndex = cond2JumpIndex + cond2Jump.offset
 							const gotoEndIndex = preceding.get(falseIndex)!
 							const gotoEnd = instructions.get(gotoEndIndex)!.instruction
