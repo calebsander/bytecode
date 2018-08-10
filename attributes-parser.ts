@@ -1,13 +1,15 @@
-import {Parser, parseByteArray, parseRepeated, parseStruct, parseInt} from './parse'
+import {parseAndThen, parseByteArray, parseRepeated, parseReturn, parseStruct, parseInt} from './parse'
 import {constantParser} from './constant-parser'
 import ConstantPoolIndex from './constant-pool-index'
 
 export interface Attribute {
 	type: ConstantPoolIndex<string>
-	info: ArrayBuffer
+	info: DataView
 }
-export const attributesParser: Parser<Attribute[]> =
+export const attributesParser =
 	parseRepeated(parseStruct<Attribute>([
 		['type', constantParser],
-		['info', parseByteArray(parseInt)]
+		['info', parseAndThen(parseByteArray(parseInt), bytes =>
+			parseReturn(new DataView(bytes))
+		)]
 	]))

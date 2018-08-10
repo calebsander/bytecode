@@ -16,7 +16,7 @@ interface ProcessedAttribute {
 }
 export function processAttribute({attribute, className, constantPool, method}: AttributeArgs): ProcessedAttribute {
 	const type = attribute.type.getValue(constantPool)
-	const dataView = new DataView(attribute.info)
+	const {info} = attribute
 	let value: any = null
 	switch (type) {
 		case 'Code': {
@@ -24,11 +24,11 @@ export function processAttribute({attribute, className, constantPool, method}: A
 				constantPool,
 				className,
 				isStatic: method.accessFlags.static
-			})(dataView).result
+			})(info).result
 			break
 		}
 		case 'ConstantValue': {
-			value = constantValueParser(constantPool)(dataView).result
+			value = constantValueParser(constantPool)(info).result
 			break
 		}
 		default: console.error('Unknown attribute type', type)
