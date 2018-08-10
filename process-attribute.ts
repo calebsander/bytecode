@@ -1,6 +1,7 @@
 import {Attribute} from './attributes-parser'
 import {codeParser} from './code-parser'
 import {ConstantPool} from './constant-pool-parser'
+import {constantValueParser} from './constant-value-parser'
 import {FieldOrMethod} from './fields-or-methods-parser'
 
 interface AttributeArgs {
@@ -24,6 +25,10 @@ export function processAttribute({attribute, className, constantPool, method}: A
 				className,
 				isStatic: method.accessFlags.static
 			})(dataView).result
+			break
+		}
+		case 'ConstantValue': {
+			value = constantValueParser(constantPool)(dataView).result
 			break
 		}
 		default: console.error('Unknown attribute type', type)

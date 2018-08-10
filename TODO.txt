@@ -2,9 +2,9 @@ Test whether old-fashioned for loops work with continues
 
 Support Class constant
 
-Decompile fields
-
 Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
+
+Static initializer
 
 Support try-catch
 

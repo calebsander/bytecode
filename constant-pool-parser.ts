@@ -41,7 +41,7 @@ export class ConstantPool {
 	}
 	public getConstant(index: number): any {
 		const rawValue = this.pool[index]
-		if (rawValue === undefined) throw new Error('No constant at index ' + String(index))
+		if (rawValue === undefined) throw new Error(`No constant at index ${index}`)
 		if (rawValue instanceof ConstantValue) return rawValue.getValue()
 		//Otherwise, must be a mapping of strings to PoolValues
 		const value: any = {}

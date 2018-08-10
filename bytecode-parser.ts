@@ -471,7 +471,7 @@ class LStore extends LocalStoreOperation {
 class LSub extends SubOperation {}
 class LUShiftRight extends UShiftRightOperation {}
 class LXor extends XorOperation {}
-class LoadConstant extends Operation {
+export class LoadConstant extends Operation {
 	constructor(public readonly constant: LiteralConstant) { super() }
 	execute(stack: Stack) {
 		const {type, value} = this.constant
