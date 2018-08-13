@@ -62,10 +62,10 @@ export abstract class LoadStoreInstruction extends Instruction {
 }
 abstract class LocalLoadInstruction extends LoadStoreInstruction {
 	execute(stack: Stack) {
-		stack.push(new Variable(this.n, this.doubleWidth))
-	}
-	get doubleWidth() {
-		return this.type === 'double' || this.type === 'long'
+		stack.push(new Variable(
+			this.n,
+			this.type === 'double' || this.type === 'long'
+		))
 	}
 }
 abstract class LocalStoreInstruction extends LoadStoreInstruction {

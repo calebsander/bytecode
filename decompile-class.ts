@@ -124,7 +124,7 @@ function classToSections(clazz: ClassFile): Section[] {
 	)
 	const [packageName] = packages as Set<string | undefined>
 	const sections: Section[] = packageName
-		? [`package ${packageName};`, '']
+		? [`package ${packageName.slice(0, -(shortClassName.length + 1))};`, '']
 		: []
 	if (imports.size) {
 		sections.push(
