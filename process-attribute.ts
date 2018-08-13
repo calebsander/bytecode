@@ -1,3 +1,4 @@
+import {Parser} from './parse'
 import {Attribute} from './attributes-parser'
 import {codeParser} from './code-parser'
 import {ConstantPool} from './constant-pool-parser'
@@ -17,21 +18,21 @@ interface ProcessedAttribute {
 export function processAttribute({attribute, className, constantPool, method}: AttributeArgs): ProcessedAttribute {
 	const type = attribute.type.getValue(constantPool)
 	const {info} = attribute
-	let value: any = null
+	let parser: Parser<any> | null = null
 	switch (type) {
 		case 'Code': {
-			value = codeParser({
+			parser = codeParser({
 				constantPool,
 				className,
 				isStatic: method.accessFlags.static
-			})(info).result
+			})
 			break
 		}
 		case 'ConstantValue': {
-			value = constantValueParser(constantPool)(info).result
+			parser = constantValueParser(constantPool)
 			break
 		}
 		default: console.error('Unknown attribute type', type)
 	}
-	return {type, value}
+	return {type, value: parser && parser(info).result}
 }
