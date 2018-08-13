@@ -17,3 +17,5 @@ Support switch(string)
 Taint expressions with types - should be able to distinguish int/long/float/double based on load/store operations
 Find how ints are being used - boolean/short/int/char by function definitions?
 If boolean is identified, expressions must be revised so as to use true/false instead of 0/1
+
+Decompile Enums

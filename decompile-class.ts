@@ -20,12 +20,17 @@ const ACCESS_FLAGS_KEYS: (keyof AccessFlags)[] = [
 	'native', 'abstract'
 ]
 
-const accessFlagsToString = (flags: AccessFlags) =>
-	ACCESS_FLAGS_KEYS.map(key => flags[key] ? key + ' ' : '').join('')
+const accessFlagsToString = (flags: AccessFlags, isInterface = false) =>
+	ACCESS_FLAGS_KEYS
+		.filter(key => !(isInterface && key === 'abstract'))
+		.map(key => flags[key] ? key + ' ' : '').join('')
 
 function classToSections(clazz: ClassFile): Section[] {
 	const {accessFlags, constantPool, fields, methods, thisClass, superClass} = clazz
+	const isInterface = accessFlags.interface
 	const className = thisClass.getValue(constantPool).name
+	const packages = new Set<string>() //will have at most 1 member
+	const shortClassName = convertClassString(className, packages)
 	const imports = new Set<string>()
 	const fieldsSections: Section[] = []
 	for (const field of fields) {
@@ -93,9 +98,9 @@ function classToSections(clazz: ClassFile): Section[] {
 		const nameString = name.getValue(constantPool)
 		const signature = nameString === '<clinit>'
 			? 'static'
-			: accessFlagsToString(accessFlags) +
+			: accessFlagsToString(accessFlags, isInterface) +
 				(nameString === '<init>'
-					? className
+					? shortClassName
 					: convertClassString(getType(descriptorString), imports) + ' ' +
 						nameString
 				) +
@@ -110,19 +115,27 @@ function classToSections(clazz: ClassFile): Section[] {
 			)
 		}
 	}
-	const classType = accessFlags.interface
+	const classType = isInterface
 		? 'interface'
 		: accessFlags.enum ? 'enum' : 'class'
 	const superClassName = convertClassString(
 		superClass.getValue(constantPool).name,
 		imports
 	)
-	const sections: Section[] = [...imports].sort()
-		.map(importClass => `import ${importClass};`)
-	if (sections.length) sections.push('')
+	const [packageName] = packages as Set<string | undefined>
+	const sections: Section[] = packageName
+		? [`package ${packageName};`, '']
+		: []
+	if (imports.size) {
+		sections.push(
+			...[...imports].sort()
+				.map(importClass => `import ${importClass};`),
+			''
+		)
+	}
 	sections.push(
-		accessFlagsToString(accessFlags) +
-			`${classType} ${className} extends ${superClassName} {`
+		accessFlagsToString(accessFlags, isInterface) +
+			`${classType} ${shortClassName} extends ${superClassName} {`
 	)
 	if (fieldsSections.length) sections.push(new IndentedLines(fieldsSections), '')
 	sections.push(new IndentedLines(methodsSections), '}')
