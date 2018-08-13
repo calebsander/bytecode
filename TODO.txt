@@ -4,8 +4,6 @@ Support Class constant
 
 Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
 
-Static initializer
-
 Support try-catch
 
 Identify +=, |=, etc.; also move the varN++ special case to a CleanupStrategy; special case varN--
