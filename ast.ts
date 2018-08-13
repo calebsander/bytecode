@@ -419,15 +419,13 @@ export class ContinueStatement extends PrimitiveStatement {
 	}
 }
 export class ReturnStatement extends PrimitiveStatement {
-	constructor(public readonly exp: Expression | null) { super() }
+	constructor(public readonly exp?: Expression) { super() }
 	walkExpressions(handler: ExpressionHandler) {
 		if (this.exp) this.exp.walk(handler)
 	}
 	replace({expressions}: Replacements) {
 		return new ReturnStatement(
-			this.exp
-				? (expressions.get(this.exp) || this.exp).replace(expressions)
-				: null
+			this.exp && (expressions.get(this.exp) || this.exp).replace(expressions)
 		)
 	}
 	toSections() {

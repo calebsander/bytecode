@@ -6,8 +6,6 @@ Support try-catch
 
 CleanupStrategy that identifies for-in loops
 
-Rename "Operation" to "Instruction"
-
 Identify new ...[]{...} expressions, e.g.:
 new int[3][0] = 1;
 new int[3][1] = 2;

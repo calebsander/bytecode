@@ -1,11 +1,12 @@
 import {AccessFlags} from './access-flags-parser'
 import {blockToSections, IndentedLines, Section, sectionsToString} from './ast'
-import {Code, LoadConstant, Stack} from './bytecode-parser'
+import {Code} from './bytecode-parser'
 import {ClassFile} from './class-file-parser'
 import {cleanup, convertClassString, resolvePackageClasses} from './cleanup-ast'
 import {CodeAttribute} from './code-parser'
 import {parseMethodAST} from './control-flow'
 import {doubleWidthType, getArgTypes, getType} from './descriptor'
+import {LoadConstant, Stack} from './instructions'
 import {processAttribute} from './process-attribute'
 import {varName, getLocalTypes} from './variable-types'
 

@@ -14,17 +14,17 @@ import {
 	SwitchStatement,
 	SynchronizedStatement
 } from './ast'
+import {Code} from './bytecode-parser'
 import {
-	Code,
 	forcePop,
 	Goto,
 	IfCondition,
 	Jump,
 	MonitorEnter,
-	MONITOR_EXIT_MESSAGE,
+	MonitorExitError,
 	Stack,
-	Switch
-} from './bytecode-parser'
+	SwitchInstruction
+} from './instructions'
 
 interface LoopCounter {
 	count: number
@@ -34,11 +34,6 @@ type Loops = Map<number, LoopReference>
 class IfExceedsBoundsError extends Error {
 	constructor(public readonly instructionAfterIf: number) {
 		super('If statement exceeds block')
-	}
-}
-class MonitorExitError extends Error {
-	constructor(public readonly nextInstruction: number) {
-		super(MONITOR_EXIT_MESSAGE)
 	}
 }
 
@@ -84,7 +79,7 @@ function parseControlFlow(
 		const {instruction, length} = instructionLength
 		const nextIndex = index + length
 		preceding.set(nextIndex, index)
-		if (instruction instanceof Switch) firstSwitch = Math.min(firstSwitch, index)
+		if (instruction instanceof SwitchInstruction) firstSwitch = Math.min(firstSwitch, index)
 		else if (instruction instanceof MonitorEnter) firstMonitor = Math.min(firstMonitor, index)
 		// Breaks and continues don't need to be processed as separate blocks
 		else if (instruction instanceof Jump && !(getBreak(index) || getContinue(index))) {
@@ -126,7 +121,7 @@ function parseControlFlow(
 		const {instruction, length} = instructionLength
 		try { instruction.execute(stack, block) }
 		catch (e) {
-			if (e.message === MONITOR_EXIT_MESSAGE) e = new MonitorExitError(index + length)
+			if (e instanceof MonitorExitError) e = new MonitorExitError(e.message, index + length)
 			throw e
 		}
 		const breakLoop = getBreak(index)
@@ -286,7 +281,7 @@ function parseControlFlow(
 		)
 	}
 	else if (firstControl === firstSwitch) {
-		const {offsetMap, defaultOffset} = instructions.get(firstSwitch)!.instruction as Switch
+		const {offsetMap, defaultOffset} = instructions.get(firstSwitch)!.instruction as SwitchInstruction
 		const caseStartSet = new Set<number>()
 		const inverseJumpMap = new Map<number, (number | null)[]>() //map of case starts to values which hit that case
 		const offsetMapWithDefault = new Map<number | null, number>(offsetMap)
@@ -380,7 +375,7 @@ function parseControlFlow(
 			)
 		}
 		catch (e) {
-			if (!(e instanceof MonitorExitError)) throw e
+			if (!(e instanceof MonitorExitError && e.nextInstruction)) throw e
 			block.push(new SynchronizedStatement(obj, synchronizedBlock))
 			const instructionLength = instructions.get(e.nextInstruction)
 			let instructionAfterCatch: number | undefined
