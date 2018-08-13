@@ -790,8 +790,6 @@ const parseLookupSwitch =
 const pad = (offset: number) =>
 	offset + 3 - ((offset + 3) & 3) //0-3 bytes of padding
 
-const bytecodesFound = new Set<number>()
-
 export interface MethodContext {
 	constantPool: ConstantPool
 	className: string
@@ -807,7 +805,6 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 		while (offset < bytecode.byteLength) {
 			const opCodeOffset = offset
 			let opCode = data.getUint8(offset++)
-			bytecodesFound.add(opCode)
 			let wide: boolean
 			if (opCode === 0xc4) { //wide
 				wide = true
@@ -1479,14 +1476,3 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 		}
 		return parseReturn(instructions)
 	})
-process.on('exit', () => {
-	console.log(
-		[...bytecodesFound]
-			.sort((a, b) => a - b)
-			.map(x => '0x' + x.toString(16))
-	)
-	let i: number
-	//Skip dup/swap, jsr/ret, and invokedynamic instructions
-	for (i = 0xbb; bytecodesFound.has(i); i++);
-	console.log('0x' + i.toString(16))
-})
