@@ -385,17 +385,17 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 			}))
 		}
 		else if (expression instanceof NewObject) {
-			const replacedExpression = new NewObject({
-				name: convertClassString(expression.clazz.name, imports)
-			})
-			replacedExpression.args = expression.args
-			replacements.set(expression, replacedExpression)
+			replacements.set(expression, new NewObject(
+				{name: convertClassString(expression.clazz.name, imports)},
+				expression.args
+			))
 		}
 		else if (expression instanceof NewArray && !expression.primitive) {
 			replacements.set(expression, new NewArray(
 				{name: convertClassString(expression.type.name, imports)},
 				expression.dimensions,
-				expression.primitive
+				expression.primitive,
+				expression.elements
 			))
 		}
 		else if (expression instanceof Cast && !expression.primitive) {

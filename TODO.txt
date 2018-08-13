@@ -6,12 +6,6 @@ Support try-catch
 
 CleanupStrategy that identifies for-in loops
 
-Identify new ...[]{...} expressions, e.g.:
-new int[3][0] = 1;
-new int[3][1] = 2;
-new int[3][2] = 3;
-var3 = new int[3];
-
 Support switch(string)
 
 Taint expressions with types - should be able to distinguish int/long/float/double based on load/store operations

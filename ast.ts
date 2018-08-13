@@ -295,21 +295,22 @@ export class ArrayAccess extends Expression {
 	}
 }
 export class NewObject extends Expression {
-	public args?: Expression[]
-	constructor(public readonly clazz: NameReference) { super() }
+	constructor(
+		public readonly clazz: NameReference,
+		public args?: Expression[]
+	) { super() }
 	get doubleWidth() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		for (const arg of this.args || []) arg.walk(handler)
 	}
 	replace(replacements: Map<Expression, Expression>) {
-		const newExpression = new NewObject(this.clazz)
-		if (this.args) {
-			newExpression.args = this.args.map(arg =>
+		return new NewObject(
+			this.clazz,
+			this.args && this.args.map(arg =>
 				(replacements.get(arg) || arg).replace(replacements)
 			)
-		}
-		return newExpression
+		)
 	}
 	toString() {
 		if (!this.args) throw new Error('No arguments given to constructor')
@@ -323,12 +324,14 @@ export class NewArray extends Expression {
 	constructor(
 		public readonly type: NameReference,
 		public readonly dimensions: Expression[],
-		public readonly primitive: boolean
+		public readonly primitive: boolean,
+		public elements?: Expression[]
 	) { super() }
 	get doubleWidth() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		for (const dimension of this.dimensions) dimension.walk(handler)
+		for (const element of this.elements || []) element.walk(handler)
 	}
 	replace(replacements: Map<Expression, Expression>) {
 		return new NewArray(
@@ -336,13 +339,22 @@ export class NewArray extends Expression {
 			this.dimensions.map(dimension =>
 				(replacements.get(dimension) || dimension).replace(replacements)
 			),
-			this.primitive
+			this.primitive,
+			this.elements && this.elements.map(element =>
+				(replacements.get(element) || element).replace(replacements)
+			)
 		)
 	}
 	toString() {
 		return `new ${this.type.name}${this.dimensions
-			.map(dimension => `[${dimension.toString(true)}]`)
+			.map(dimension => `[${this.elements ? '' : dimension.toString(true)}]`)
 			.join('')
+		}${this.elements
+			? `{${this.elements
+				.map(element => element.toString())
+				.join(', ')
+			}}`
+			: ''
 		}`
 	}
 }

@@ -90,12 +90,22 @@ abstract class ArrayStoreInstruction extends Instruction {
 		const value = forcePop(stack),
 		      index = forcePop(stack),
 		      arr   = forcePop(stack)
-		block.push(new ExpressionStatement(
-			new Assignment(
-				new ArrayAccess(arr, index, false),
-				value
-			)
-		))
+		if (arr instanceof NewArray && index instanceof IntegerLiteral) {
+			let {elements} = arr
+			if (!elements) {
+				elements = []
+				arr.elements = elements
+			}
+			elements[index.i] = value
+		}
+		else {
+			block.push(new ExpressionStatement(
+				new Assignment(
+					new ArrayAccess(arr, index, false),
+					value
+				)
+			))
+		}
 	}
 }
 abstract class ReturnInstruction extends Instruction {
