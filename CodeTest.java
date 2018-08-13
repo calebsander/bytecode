@@ -285,4 +285,8 @@ public class CodeTest {
 		a--;
 		return a;
 	}
+	public int checkcastArray() {
+		Integer[] abc = (Integer[])new Object[]{1, 2, 3};
+		return abc.length;
+	}
 }

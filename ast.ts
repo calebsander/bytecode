@@ -199,11 +199,12 @@ export class Assignment extends Expression {
 	get doubleWidth() { return this.rhs.doubleWidth }
 	walk(handler: ExpressionHandler) {
 		handler(this)
-		this.rhs.walk(handler) //don't think there is any need to walk the LHS
+		this.lhs.walk(handler)
+		this.rhs.walk(handler)
 	}
 	replace(replacements: Map<Expression, Expression>) {
 		return new Assignment(
-			this.lhs,
+			(replacements.get(this.lhs) || this.lhs).replace(replacements) as Variable | ArrayAccess | FieldAccess,
 			(replacements.get(this.rhs) || this.rhs).replace(replacements),
 			this.op
 		)

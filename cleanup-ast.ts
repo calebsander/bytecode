@@ -365,7 +365,7 @@ export function convertClassString(clazz: string, imports: Set<string>) {
 	const dotString = clazz.replace(/\//g, '.')
 	const packages = dotString.split('.')
 	if (!(packages.length === 3 && packages[0] === 'java' && packages[1] === 'lang')) {
-		imports.add(dotString)
+		imports.add(dotString.replace(/(?:\[\])+$/, ''))
 	}
 	const [clazzName] = packages.slice(-1)
 	return clazzName

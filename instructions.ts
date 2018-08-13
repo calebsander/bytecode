@@ -276,7 +276,12 @@ export class BAStore extends ArrayStoreInstruction {}
 export class CALoad extends ArrayLoadInstruction {}
 export class CAStore extends ArrayStoreInstruction {}
 export class CheckCast extends Instruction {
-	constructor(public readonly clazz: Class) { super() }
+	public readonly clazz: Class
+	constructor(clazz: Class) {
+		super()
+		const {name} = clazz
+		this.clazz = name[0] === '[' ? {name: getType(name)} : clazz
+	}
 	execute(stack: Stack) {
 		stack.push(new Cast(this.clazz, forcePop(stack), false))
 	}
