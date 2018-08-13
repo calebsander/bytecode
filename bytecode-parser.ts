@@ -398,12 +398,10 @@ class IInc extends Operation {
 	execute(_: Stack, block: Block) {
 		const variable = new Variable(this.n, false)
 		block.push(new ExpressionStatement(
-			this.i === 1
-				? new UnaryOperation({op: '++', post: true}, variable)
-				: new Assignment(
-						variable,
-						new BinaryOperation('+', variable, new IntegerLiteral(this.i))
-					)
+			new Assignment(
+				variable,
+				new BinaryOperation('+', variable, new IntegerLiteral(this.i))
+			)
 		))
 	}
 }

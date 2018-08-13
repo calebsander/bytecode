@@ -4,8 +4,6 @@ Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
 
 Support try-catch
 
-Identify +=, |=, etc.; also move the varN++ special case to a CleanupStrategy; special case varN--
-
 CleanupStrategy that identifies for-in loops
 
 Rename "Operation" to "Instruction"

@@ -110,13 +110,24 @@ export class UnaryOperation extends Expression {
 			: op + argString
 	}
 }
+export const ASSIGNMENT_BINARY_OPS = {
+	'+': true,
+	'-': true,
+	'*': true,
+	'/': true,
+	'%': true,
+	'<<': true,
+	'>>': true,
+	'>>>': true,
+	'&': true,
+	'|': true,
+	'^': true
+}
+export type AssignmentBinaryOp = keyof typeof ASSIGNMENT_BINARY_OPS
 export type BinaryOp
-	= '*' | '/' | '%'
-	| '+' | '-'
-	| '<<' | '>>' | '>>>'
+	= AssignmentBinaryOp
 	| '<' | '<=' | '>' | '>='
 	| '==' | '!='
-	| '&' | '^' | '|'
 	| '&&' | '||'
 	| 'instanceof'
 export class BinaryOperation extends Expression {
@@ -182,7 +193,8 @@ export class Ternary extends Expression {
 export class Assignment extends Expression {
 	constructor(
 		public readonly lhs: Variable | ArrayAccess | FieldAccess,
-		public readonly rhs: Expression
+		public readonly rhs: Expression,
+		public readonly op?: AssignmentBinaryOp
 	) { super() }
 	get doubleWidth() { return this.rhs.doubleWidth }
 	walk(handler: ExpressionHandler) {
@@ -192,11 +204,12 @@ export class Assignment extends Expression {
 	replace(replacements: Map<Expression, Expression>) {
 		return new Assignment(
 			this.lhs,
-			(replacements.get(this.rhs) || this.rhs).replace(replacements)
+			(replacements.get(this.rhs) || this.rhs).replace(replacements),
+			this.op
 		)
 	}
 	toString(omitParens?: boolean) {
-		const insideParens = `${this.lhs.toString()} = ${this.rhs.toString(true)}` //are parens needed on RHS?
+		const insideParens = `${this.lhs.toString()} ${this.op || ''}= ${this.rhs.toString(true)}` //are parens needed on RHS?
 		return omitParens ? insideParens : `(${insideParens})`
 	}
 }

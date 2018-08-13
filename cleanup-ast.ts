@@ -1,4 +1,7 @@
 import {
+	Assignment,
+	AssignmentBinaryOp,
+	ASSIGNMENT_BINARY_OPS,
 	BinaryOp,
 	BinaryOperation,
 	Block,
@@ -299,6 +302,33 @@ const collapseCasesWithDefault: CleanupStrategy = block => {
 		statements: replacements
 	}
 }
+const shorthandAssignments: CleanupStrategy = block => {
+	const replacements = new Map<Expression, Expression>()
+	walkBlockExpressions(block, expression => {
+		if (expression instanceof Assignment) {
+			const {lhs, rhs, op} = expression
+			if (!op && rhs instanceof BinaryOperation) {
+				const {op, arg1, arg2} = rhs
+				if (op in ASSIGNMENT_BINARY_OPS && (lhs as Expression).toString(true) === arg1.toString(true)) {
+					let incExpression: Expression | undefined
+					if (op === '+' && arg2 instanceof IntegerLiteral) {
+						const arg2String = `${arg2}`
+						if (arg2String === '1') incExpression = new UnaryOperation({op: '++', post: false}, lhs)
+						else if (arg2String === '-1') incExpression = new UnaryOperation({op: '--', post: false}, lhs)
+					}
+					replacements.set(
+						expression,
+						incExpression || new Assignment(lhs, arg2, op as AssignmentBinaryOp)
+					)
+				}
+			}
+		}
+	})
+	return {
+		expressions: replacements,
+		statements: new Map
+	}
+}
 const STRATEGIES = [
 	removeTrailingReturn,
 	avoidEmptyIfBlock,
@@ -311,7 +341,8 @@ const STRATEGIES = [
 	identifyWhileCondition,
 	resolveTrueIfCondition,
 	resolveIfBodyOfWhile,
-	collapseCasesWithDefault
+	collapseCasesWithDefault,
+	shorthandAssignments
 ]
 
 export function cleanup(block: Block): Block {
