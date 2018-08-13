@@ -91,21 +91,24 @@ function classToSections(clazz: ClassFile): Section[] {
 		}
 		else methodSections = ['// Could not parse method']
 		const nameString = name.getValue(constantPool)
-		methodsSections.push(
-			(nameString === '<clinit>'
-				? 'static'
-				: accessFlagsToString(accessFlags) +
-					(nameString === '<init>'
-						? className
-						: convertClassString(getType(descriptorString), imports) + ' ' +
-							nameString
-					) +
-					`(${params.join(', ')})`
-			) + ' {',
-			new IndentedLines(declarations),
-			new IndentedLines(methodSections),
-			'}'
-		)
+		const signature = nameString === '<clinit>'
+			? 'static'
+			: accessFlagsToString(accessFlags) +
+				(nameString === '<init>'
+					? className
+					: convertClassString(getType(descriptorString), imports) + ' ' +
+						nameString
+				) +
+				`(${params.join(', ')})`
+		if (accessFlags.abstract) methodsSections.push(signature + ';')
+		else {
+			methodsSections.push(
+				signature + ' {',
+				new IndentedLines(declarations),
+				new IndentedLines(methodSections),
+				'}'
+			)
+		}
 	}
 	const classType = accessFlags.interface
 		? 'interface'
