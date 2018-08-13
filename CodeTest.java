@@ -1,3 +1,4 @@
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -259,5 +260,12 @@ public class CodeTest {
 		if (o == null) o = new Object();
 		if (o != null) return o.hashCode();
 		return 0;
+	}
+	public List<String> objectFields() {
+		List<String> list = new ArrayList<>();
+		for (Field field : Object.class.getFields()) {
+			list.add(field.getName());
+		}
+		return list;
 	}
 }

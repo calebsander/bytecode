@@ -101,20 +101,22 @@ const REF_PARSER: PoolValueParser<ReferencedValue<Ref>> = pool => data => {
 export interface Class {
 	name: string
 }
-const CLASS_PARSER: PoolValueParser<ReferencedValue<Class>> = pool => data => {
+export type LiteralConstant
+	= {type: 'class', name: string}
+	| {type: 'string', value: string}
+	| {type: 'int' | 'float' | 'double', value: number}
+	| {type: 'long', value: BigInt}
+const CLASS_PARSER: PoolValueParser<ReferencedValue<Class & LiteralConstant>> = pool => data => {
 	const {result: nameIndex, length} = parseShort(data)
 	return {
 		result: {
+			type: new ConstantValue<'class'>('class'),
 			name: new PoolValue(pool, nameIndex)
 		},
 		length,
 		entries: 1
 	}
 }
-export type LiteralConstant
-	= {type: 'string', value: string}
-	| {type: 'int' | 'float' | 'double', value: number}
-	| {type: 'long', value: BigInt}
 const STRING_PARSER: PoolValueParser<ReferencedValue<LiteralConstant>> = pool => data => {
 	const {result: utf8Index, length} = parseShort(data)
 	return {
@@ -274,10 +276,9 @@ export const constantPoolParser: Parser<ConstantPool> =
 			let length = 0
 			const pool = new ConstantPool(numConstants)
 			for (let constantIndex = 1; constantIndex < numConstants;) {
-				const constantTag = data.getUint8(length)
-				length++
+				const constantTag = data.getUint8(length++)
 				const constantParser = CONSTANT_PARSERS.get(constantTag)
-				if (!constantParser) throw new Error('Unknown constant pool type: ' + String(constantTag))
+				if (!constantParser) throw new Error(`Unknown constant pool type: ${constantTag}`)
 				const {result, length: valueLength, entries} = constantParser(pool)(slice(data, length))
 				pool.setConstant(constantIndex, result)
 				constantIndex += entries

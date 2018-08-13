@@ -15,6 +15,7 @@ import {
 	Block,
 	BooleanLiteral,
 	Cast,
+	ClassLiteral,
 	ClassReference,
 	Expression,
 	ExpressionStatement,
@@ -474,26 +475,28 @@ class LXor extends XorOperation {}
 export class LoadConstant extends Operation {
 	constructor(public readonly constant: LiteralConstant) { super() }
 	execute(stack: Stack) {
-		const {type, value} = this.constant
 		let exp: Expression
-		switch (type) {
+		switch (this.constant.type) {
+			case 'class':
+				exp = new ClassLiteral(this.constant)
+				break
 			case 'string':
-				exp = new StringLiteral(value as string)
+				exp = new StringLiteral(this.constant.value)
 				break
 			case 'int':
-				exp = new IntegerLiteral(value as number)
+				exp = new IntegerLiteral(this.constant.value)
 				break
 			case 'long':
-				exp = new IntegerLiteral(value as BigInt, true)
+				exp = new IntegerLiteral(this.constant.value, true)
 				break
 			case 'float':
-				exp = new FloatLiteral(value as number)
+				exp = new FloatLiteral(this.constant.value)
 				break
 			case 'double':
-				exp = new FloatLiteral(value as number, true)
+				exp = new FloatLiteral(this.constant.value, true)
 				break
 			default:
-				throw new Error('Unexpected literal type: ' + type)
+				throw new Error('Unexpected literal type: ' + (this.constant as LiteralConstant).type)
 		}
 		stack.push(exp)
 	}

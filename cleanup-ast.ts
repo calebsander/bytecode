@@ -5,6 +5,7 @@ import {
 	BooleanLiteral,
 	BreakStatement,
 	Cast,
+	ClassLiteral,
 	ClassReference,
 	ContinueStatement,
 	Expression,
@@ -331,15 +332,23 @@ export function convertClassString(clazz: string, imports: Set<string>) {
 	if (!clazz.includes('/')) return clazz
 
 	const dotString = clazz.replace(/\//g, '.')
-	if (!dotString.startsWith('java.lang.')) imports.add(dotString)
-	const [clazzName] = dotString.split('.').slice(-1)
+	const packages = dotString.split('.')
+	if (!(packages.length === 3 && packages[0] === 'java' && packages[1] === 'lang')) {
+		imports.add(dotString)
+	}
+	const [clazzName] = packages.slice(-1)
 	return clazzName
 }
 //Replaces, e.g. java/util/ArrayList with ArrayList
 export function resolvePackageClasses(block: Block, imports: Set<string>): Block {
 	const replacements = new Map<Expression, Expression>()
 	walkBlockExpressions(block, expression => {
-		if (expression instanceof ClassReference) {
+		if (expression instanceof ClassLiteral) {
+			replacements.set(expression, new ClassLiteral({
+				name: convertClassString(expression.clazz.name, imports)
+			}))
+		}
+		else if (expression instanceof ClassReference) {
 			replacements.set(expression, new ClassReference({
 				name: convertClassString(expression.clazz.name, imports)
 			}))

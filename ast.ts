@@ -58,6 +58,11 @@ export class StringLiteral extends PrimitiveExpression {
 		return `"${this.str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 	}
 }
+export class ClassLiteral extends PrimitiveExpression {
+	constructor(public readonly clazz: NameReference) { super() }
+	get doubleWidth() { return false }
+	toString() { return this.clazz.name + '.class' }
+}
 export class NullLiteral extends PrimitiveExpression {
 	get doubleWidth() { return false }
 	toString() { return 'null' }
