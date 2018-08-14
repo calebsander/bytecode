@@ -97,4 +97,7 @@ class ControlFlow {
 		}
 		a = 10;
 	}
+	public boolean multipleAnd() {
+		return getTrue() && getTrue() && getFalse();
+	}
 }

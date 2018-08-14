@@ -5,6 +5,7 @@ import {
 	BreakStatement,
 	Case,
 	ContinueStatement,
+	Expression,
 	IfStatement,
 	IntegerLiteral,
 	LoopReference,
@@ -32,7 +33,10 @@ interface LoopCounter {
 type Loops = Map<number, LoopReference>
 
 class IfExceedsBoundsError extends Error {
-	constructor(public readonly instructionAfterIf: number) {
+	constructor(
+		public readonly instructionAfterIf: number,
+		public readonly target: number
+	) {
 		super('If statement exceeds block')
 	}
 }
@@ -52,19 +56,15 @@ function parseControlFlow(
 ): Block {
 	const getBreak = (index: number) => {
 		const {instruction} = instructions.get(index)!
-		if (instruction instanceof Goto || instruction instanceof IfCondition) {
-			const jumpTarget = index + instruction.offset
-			return breaks.get(jumpTarget)
-		}
-		return undefined
+		return instruction instanceof Goto || instruction instanceof IfCondition
+			? breaks.get(index + instruction.offset)
+			: undefined
 	}
 	const getContinue = (index: number) => {
 		const {instruction} = instructions.get(index)!
-		if (instruction instanceof Goto || instruction instanceof IfCondition) {
-			const jumpTarget = index + instruction.offset
-			return continues.get(jumpTarget)
-		}
-		return undefined
+		return instruction instanceof Goto || instruction instanceof IfCondition
+			? continues.get(index + instruction.offset)
+			: undefined
 	}
 	const preceding = new Map<number, number>()
 	let firstJumpForward = Infinity, //index of the instruction after the if jump
@@ -121,7 +121,7 @@ function parseControlFlow(
 		const {instruction, length} = instructionLength
 		try { instruction.execute(stack, block) }
 		catch (e) {
-			if (e instanceof MonitorExitError) e = new MonitorExitError(e.message, index + length)
+			if (e instanceof MonitorExitError) e = new MonitorExitError(index + length)
 			throw e
 		}
 		const breakLoop = getBreak(index)
@@ -143,107 +143,112 @@ function parseControlFlow(
 		index += length
 	}
 	if (firstControl === firstJumpForward) {
-		if (firstJumpForwardTarget! > end) throw new IfExceedsBoundsError(firstJumpForward)
+		if (firstJumpForwardTarget! > end) throw new IfExceedsBoundsError(firstJumpForward, firstJumpForwardTarget)
 		const elseCondition = forcePop(stack)
 		const lastIndexOfIf = preceding.get(firstJumpForwardTarget)!
 		const lastInstructionOfIf = instructions.get(lastIndexOfIf)!.instruction
 		const hasElseBlock = lastInstructionOfIf instanceof Goto &&
 			!(getBreak(lastIndexOfIf) || getContinue(lastIndexOfIf))
 		let ifBlockEnd = hasElseBlock ? lastIndexOfIf : firstJumpForwardTarget
-		let elseBlockEnd: number, elseBlock: Block, elseStack: Stack
+		let elseBlockEnd: number | undefined, elseBlock: Block = [], elseStack: Stack = []
 		if (hasElseBlock) {
 			elseBlockEnd = lastIndexOfIf + (lastInstructionOfIf as Goto).offset
-			elseStack = []
-			elseBlock = parseControlFlow(
+			parseControlFlow(
 				instructions,
 				firstJumpForwardTarget, elseBlockEnd,
 				loopCounter, breaks, continues,
-				elseStack
+				elseStack, elseBlock
 			)
 		}
-		else elseBlock = elseStack = []
-		const ifStack: Stack = []
-		const ifBlock: Block = []
-		try {
-			parseControlFlow(
-				instructions,
-				firstJumpForward, ifBlockEnd,
-				loopCounter, breaks, continues,
-				ifStack, ifBlock
-			)
-			const isTernary = !(ifBlock.length || elseBlock.length) &&
-				ifStack.length === 1 && elseStack.length === 1
-			const cond = new UnaryOperation('!', elseCondition)
-			if (isTernary) stack.push(new Ternary(cond, ifStack[0], elseStack[0]))
-			else block.push(new IfStatement(cond, ifBlock, elseBlock))
-		}
-		catch (e) {
-			let isAnd = false, isOr = false
-			if (e instanceof IfExceedsBoundsError && !ifBlock.length && ifStack.length === stack.length + 1) {
-				if (!elseBlock.length && elseStack.length === 1) {
-					const andStack: Stack = []
-					const andBlock = parseControlFlow(
+		if (!elseBlock.length && elseStack.length === 1) { //&& or ternary
+			const elseConditions = [elseCondition] //contains expressions causing jumps to else block
+			let ifResult: Expression | undefined
+			let clauseStart = firstJumpForward
+			do {
+				const clauseStack: Stack = []
+				const clauseBlock: Block = []
+				try {
+					parseControlFlow(
 						instructions,
-						e.instructionAfterIf, ifBlockEnd,
+						clauseStart, ifBlockEnd,
 						loopCounter, breaks, continues,
-						andStack
+						clauseStack, clauseBlock
 					)
-					if (!andBlock.length && andStack.length === 1) {
-						stack.push(new Ternary(
-							new BinaryOperation(
-								'&&',
-								new UnaryOperation('!', elseCondition),
-								new UnaryOperation('!', ifStack.pop()!)
-							),
-							andStack[0],
-							elseStack[0]
-						))
-						isAnd = true
+					;[ifResult] = clauseStack
+				} catch (e) {
+					if (e instanceof IfExceedsBoundsError && e.target === firstJumpForwardTarget) {
+						elseConditions.push(clauseStack[0])
+						clauseStart = e.instructionAfterIf
 					}
+					else throw e
 				}
-				if (!isAnd) {
-					if (e.instructionAfterIf === ifBlockEnd && !hasElseBlock) {
-						const cond2JumpIndex = preceding.get(ifBlockEnd)!
-						const cond2Jump = instructions.get(cond2JumpIndex)!.instruction
-						if (cond2Jump instanceof IfCondition) {
-							const falseIndex = cond2JumpIndex + cond2Jump.offset
-							const gotoEndIndex = preceding.get(falseIndex)!
-							const gotoEnd = instructions.get(gotoEndIndex)!.instruction
-							if (gotoEnd instanceof Goto) {
-								const trueStack: Stack = []
-								const trueBlock = parseControlFlow(
+				if (clauseBlock.length || clauseStack.length !== 1) throw new Error('Invalid &&/ternary block')
+			} while (!ifResult)
+			stack.push(new Ternary(
+				elseConditions
+					.map<Expression>(exp => new UnaryOperation('!', exp))
+					.reduceRight((rightCond, leftCond) =>
+						new BinaryOperation('&&', leftCond, rightCond)
+					),
+				ifResult,
+				elseStack[0]
+			))
+		}
+		else {
+			const ifStack: Stack = []
+			const ifBlock: Block = []
+			try {
+				parseControlFlow(
+					instructions,
+					firstJumpForward, ifBlockEnd,
+					loopCounter, breaks, continues,
+					ifStack, ifBlock
+				)
+				block.push(new IfStatement(new UnaryOperation('!', elseCondition), ifBlock, elseBlock))
+			}
+			catch (e) {
+				let isOr = false
+				if (e instanceof IfExceedsBoundsError && e.instructionAfterIf === ifBlockEnd && !ifBlock.length && ifStack.length === 1 && !hasElseBlock) {
+					const cond2JumpIndex = preceding.get(ifBlockEnd)!
+					const cond2Jump = instructions.get(cond2JumpIndex)!.instruction
+					if (cond2Jump instanceof IfCondition) {
+						const falseIndex = cond2JumpIndex + cond2Jump.offset
+						const gotoEndIndex = preceding.get(falseIndex)!
+						const gotoEnd = instructions.get(gotoEndIndex)!.instruction
+						if (gotoEnd instanceof Goto) {
+							const trueStack: Stack = []
+							const trueBlock = parseControlFlow(
+								instructions,
+								ifBlockEnd, gotoEndIndex,
+								loopCounter, breaks, continues,
+								trueStack
+							)
+							if (!trueBlock.length && trueStack.length === 1) {
+								const endIndex = gotoEndIndex + gotoEnd.offset
+								const falseStack: Stack = []
+								const falseBlock = parseControlFlow(
 									instructions,
-									ifBlockEnd, gotoEndIndex,
+									falseIndex, endIndex,
 									loopCounter, breaks, continues,
-									trueStack
+									falseStack
 								)
-								if (!trueBlock.length && trueStack.length === 1) {
-									const endIndex = gotoEndIndex + gotoEnd.offset
-									const falseStack: Stack = []
-									const falseBlock = parseControlFlow(
-										instructions,
-										falseIndex, endIndex,
-										loopCounter, breaks, continues,
-										falseStack
-									)
-									if (!falseBlock.length && falseStack.length === 1) {
-										stack.push(new Ternary(
-											new BinaryOperation('||', elseCondition, new UnaryOperation('!', ifStack[0])),
-											trueStack[0],
-											falseStack[0]
-										))
-										ifBlockEnd = endIndex
-										isOr = true
-									}
+								if (!falseBlock.length && falseStack.length === 1) {
+									stack.push(new Ternary(
+										new BinaryOperation('||', elseCondition, new UnaryOperation('!', ifStack[0])),
+										trueStack[0],
+										falseStack[0]
+									))
+									ifBlockEnd = endIndex
+									isOr = true
 								}
 							}
 						}
 					}
 				}
+				if (!isOr) throw e
 			}
-			if (!(isAnd || isOr)) throw e
 		}
-		const newStart = hasElseBlock ? elseBlockEnd! : ifBlockEnd
+		const newStart = elseBlockEnd || ifBlockEnd
 		parseControlFlow(
 			instructions,
 			newStart, end,
@@ -338,13 +343,13 @@ function parseControlFlow(
 		const cases: Case[] = []
 		for (const caseStart of caseStarts) {
 			const values = inverseJumpMap.get(caseStart)!
-			for (const emptyCaseLabel of values.slice(0, -1)) {
+			const lastValue = values.pop() as number | null
+			for (const emptyCaseLabel of values) {
 				cases.push({
 					exp: getCaseExpression(emptyCaseLabel),
 					block: []
 				})
 			}
-			const [lastValue] = values.slice(-1)
 			cases.push({
 				exp: getCaseExpression(lastValue),
 				block: caseBlocks.get(caseStart)!

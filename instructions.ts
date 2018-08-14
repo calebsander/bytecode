@@ -37,8 +37,8 @@ export function forcePop(stack: Stack) {
 }
 
 export class MonitorExitError extends Error {
-	constructor(message: string, public readonly nextInstruction?: number) {
-		super(message)
+	constructor(public readonly nextInstruction?: number) {
+		super('Cannot execute monitorexit')
 	}
 }
 
@@ -506,7 +506,7 @@ export class MonitorEnter extends Instruction {
 	execute() { throw new Error('Cannot execute monitorenter') }
 }
 export class MonitorExit extends Instruction {
-	execute() { throw new MonitorExitError('Cannot execute monitorexit') }
+	execute() { throw new MonitorExitError }
 }
 export class MultiANewArray extends Instruction {
 	constructor(
