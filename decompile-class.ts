@@ -9,6 +9,7 @@ import {doubleWidthType, getArgTypes, getType} from './descriptor'
 import {LoadConstant, Stack} from './instructions'
 import {processAttribute} from './process-attribute'
 import {varName, getLocalTypes} from './variable-types'
+import {inspect} from 'util'
 
 const CODE = 'Code'
 const CONSTANT_VALUE = 'ConstantValue'
@@ -72,7 +73,7 @@ function classToSections(clazz: ClassFile): Section[] {
 			if (parsedAttribute.type === CODE) {
 				({instructions} = parsedAttribute.value as CodeAttribute)
 				console.log(name.getValue(constantPool))
-				if (instructions.size < 100) console.log(instructions)
+				if (instructions.size < 100) console.log(inspect(instructions, true, Infinity, true))
 				console.log()
 				break
 			}

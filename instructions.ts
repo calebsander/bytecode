@@ -515,9 +515,9 @@ export class MultiANewArray extends Instruction {
 	) {
 		super()
 		const name = getType(clazz.name)
-		const braces = '[]'.repeat(dimensions)
-		if (!name.endsWith(braces)) throw new Error('Array type has wrong dimensionality')
-		clazz.name = name.slice(0, -braces.length)
+		const brackets = '[]'.repeat(dimensions)
+		if (!name.endsWith(brackets)) throw new Error('Array type has wrong dimensionality')
+		clazz.name = name.slice(0, -brackets.length)
 	}
 	execute(stack: Stack) {
 		const {dimensions} = this
@@ -607,14 +607,14 @@ export class SwitchInstruction extends Instruction {
 		public readonly offsetMap: Map<number, number>,
 		public readonly defaultOffset: number
 	) { super() }
-	execute() { throw new Error('Cannot execute tableswitch') }
+	execute() { throw new Error('Cannot execute tableswitch or lookupswitch') }
 }
 //When executed, jumps push the expression under which they jump onto the stack
 export abstract class Jump extends Instruction {
+	constructor(public readonly offset: number) { super() }
 	abstract readonly offsets: Iterable<number>
 }
 export abstract class IfCondition extends Jump {
-	constructor(public readonly offset: number) { super() }
 	protected abstract readonly jumpOp: BinaryOp
 	get offsets() { return [3, this.offset] } //if* instruction is 3 bytes long
 }
@@ -692,7 +692,6 @@ export class IfNonNull extends IfNullCmp {
 	get jumpOp(): BinaryOp { return '!=' }
 }
 export class Goto extends Jump {
-	constructor(public readonly offset: number) { super() }
 	get offsets() { return [this.offset] }
 	execute(stack: Stack) {
 		stack.push(new BooleanLiteral(true))

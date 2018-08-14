@@ -209,10 +209,10 @@ public class CodeTest {
 	}
 	public int stringSwitch() {
 		int result = 0;
-		switch (this.getClass().getName().hashCode()) {
-			case -803337153: //"CodeTest".hashCode()
+		switch (this.getClass().getName()) {
+			case "CodeTest":
 				result = 1;
-			case -1939501217: //"Object".hashCode()
+			case "Object":
 				result++;
 				break;
 			default:

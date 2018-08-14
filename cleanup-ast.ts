@@ -5,14 +5,18 @@ import {
 	BinaryOp,
 	BinaryOperation,
 	Block,
+	BlockHandler,
 	BooleanLiteral,
 	BreakStatement,
+	Case,
 	Cast,
 	ClassLiteral,
 	ClassReference,
 	ContinueStatement,
 	Expression,
+	ExpressionStatement,
 	ExpressionHandler,
+	FunctionCall,
 	IfStatement,
 	IntegerLiteral,
 	NewArray,
@@ -22,9 +26,11 @@ import {
 	ReturnStatement,
 	Statement,
 	StatementHandler,
+	StringLiteral,
 	SwitchStatement,
 	Ternary,
 	UnaryOperation,
+	Variable,
 	WhileStatement
 } from './ast'
 
@@ -41,7 +47,13 @@ function walkBlockExpressions(block: Block, handler: ExpressionHandler) {
 	for (const statement of block) statement.walkExpressions(handler)
 }
 function walkBlockStatements(block: Block, handler: StatementHandler) {
-	for (const statement of block) statement.walkStatements(handler)
+	walkBlocks(block, block => {
+		for (const statement of block) handler(statement)
+	})
+}
+function walkBlocks(block: Block, handler: BlockHandler) {
+	handler(block)
+	for (const statement of block) statement.walkBlocks(handler)
 }
 const isTrue = (cond: Expression) =>
 	(cond instanceof BooleanLiteral && cond.b) ||
@@ -302,6 +314,95 @@ const collapseCasesWithDefault: CleanupStrategy = block => {
 		statements: replacements
 	}
 }
+const removeEmptyLastCase: CleanupStrategy = block => {
+	const replacements = new Map<Statement, Statement[]>()
+	walkBlockStatements(block, statement => {
+		if (statement instanceof SwitchStatement) {
+			const {val, cases, label} = statement
+			let removeFrom = cases.length
+			while (removeFrom && !cases[removeFrom - 1].block.length) removeFrom--
+			if (removeFrom < cases.length) {
+				replacements.set(statement, [new SwitchStatement(
+					val,
+					cases.slice(0, removeFrom),
+					label
+				)])
+			}
+		}
+	})
+	return {
+		expressions: new Map,
+		statements: replacements
+	}
+}
+const identifyStringSwitch: CleanupStrategy = block => {
+	const replacements = new Map<Statement, Statement[]>()
+	walkBlocks(block, block => {
+		testIndex: for (let i = 0; i < block.length; i++) {
+			const [valAssignment, indexInit, hashSwitch, indexSwitch] = block.slice(i, i + 4)
+			if (!(valAssignment instanceof ExpressionStatement && valAssignment.exp instanceof Assignment &&
+				valAssignment.exp.lhs instanceof Variable && indexInit instanceof ExpressionStatement && indexInit.exp instanceof Assignment)) continue
+			const valVariableN = valAssignment.exp.lhs.n
+			const {lhs, rhs} = indexInit.exp
+			if (!(rhs instanceof IntegerLiteral && rhs.i === -1 && lhs instanceof Variable && hashSwitch instanceof SwitchStatement)) continue
+			const indexVariableN = lhs.n
+			// TODO: handle strings with hash collisions
+			const indexValues = new Map<number, StringLiteral>()
+			const {val, cases, label} = hashSwitch
+			if (!(val instanceof FunctionCall)) continue
+			const {obj, func, args} = val
+			if (!(obj instanceof Variable && obj.n === valVariableN && func && func.name === 'hashCode' && !args.length)) continue
+			for (let j = 0; j < cases.length; j++) {
+				const {exp, block} = cases[j]
+				if (!exp) continue testIndex
+				const [ifEquals, setIndex, breakStatement] = block
+				if (j < cases.length - 1) {
+					if (!(block.length === 3 && breakStatement instanceof BreakStatement && breakStatement.loop === label)) continue testIndex
+				}
+				else if (block.length !== 2) continue testIndex
+				if (!(ifEquals instanceof IfStatement)) continue testIndex
+				const {cond, ifBlock, elseBlock} = ifEquals
+				const [ifBreakStatement] = ifBlock
+				if (!(cond instanceof BinaryOperation && ifBlock.length === 1 && ifBreakStatement instanceof BreakStatement &&
+					ifBreakStatement.loop === label && !elseBlock.length)) continue testIndex
+				const {op, arg1, arg2} = cond
+				// TODO: 'equals() == 0' will need to be changed to '!equals()'
+				if (!(op === '==' && arg1 instanceof FunctionCall && arg2 instanceof IntegerLiteral && !arg2.i && arg1)) continue testIndex
+				const {obj, func, args} = arg1
+				if (!(obj instanceof Variable && obj.n === valVariableN && func && func.name === 'equals' && args.length === 1)) continue testIndex
+				const [str] = args
+				if (!(str instanceof StringLiteral && setIndex instanceof ExpressionStatement && setIndex.exp instanceof Assignment)) continue testIndex
+				const {lhs, rhs} = setIndex.exp
+				if (!(lhs instanceof Variable && lhs.n === indexVariableN && rhs instanceof IntegerLiteral)) continue testIndex
+				indexValues.set(rhs.i, str)
+			}
+			if (!(indexSwitch instanceof SwitchStatement && indexSwitch.val instanceof Variable && indexSwitch.val.n === indexVariableN)) continue
+			const newCases: Case[] = []
+			for (const {exp, block} of indexSwitch.cases) {
+				if (exp) {
+					if (!(exp instanceof IntegerLiteral)) continue testIndex
+					const str = indexValues.get(exp.i)
+					if (!str) continue testIndex
+					newCases.push({exp: str, block})
+				}
+				else newCases.push({exp, block})
+			}
+			replacements
+				.set(valAssignment, [])
+				.set(indexInit, [])
+				.set(hashSwitch, [])
+				.set(indexSwitch, [new SwitchStatement(
+					valAssignment.exp.rhs,
+					newCases,
+					indexSwitch.label
+				)])
+		}
+	})
+	return {
+		expressions: new Map,
+		statements: replacements
+	}
+}
 const shorthandAssignments: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
 	walkBlockExpressions(block, expression => {
@@ -342,6 +443,8 @@ const STRATEGIES = [
 	resolveTrueIfCondition,
 	resolveIfBodyOfWhile,
 	collapseCasesWithDefault,
+	removeEmptyLastCase,
+	identifyStringSwitch,
 	shorthandAssignments
 ]
 

@@ -56,13 +56,13 @@ function parseControlFlow(
 ): Block {
 	const getBreak = (index: number) => {
 		const {instruction} = instructions.get(index)!
-		return instruction instanceof Goto || instruction instanceof IfCondition
+		return instruction instanceof Jump
 			? breaks.get(index + instruction.offset)
 			: undefined
 	}
 	const getContinue = (index: number) => {
 		const {instruction} = instructions.get(index)!
-		return instruction instanceof Goto || instruction instanceof IfCondition
+		return instruction instanceof Jump
 			? continues.get(index + instruction.offset)
 			: undefined
 	}
@@ -328,7 +328,7 @@ function parseControlFlow(
 					if (!breakIndex && e instanceof IfExceedsBoundsError) {
 						const jumpIndex = preceding.get(e.instructionAfterIf)!
 						const jump = instructions.get(jumpIndex)!.instruction
-						if (jump instanceof Goto) {
+						if (jump instanceof Jump) {
 							breakIndex = jumpIndex + jump.offset
 							if (breakIndex <= firstSwitch || breakIndex > end) throw new Error('Break exceeds block')
 							breaks.set(breakIndex, switchLabel)

@@ -386,6 +386,7 @@ export class Cast extends Expression {
 }
 
 export type StatementHandler = (statement: Statement) => void
+export type BlockHandler = (block: Block) => void
 export interface Replacements {
 	expressions: Map<Expression, Expression>
 	statements: Map<Statement, Statement[]>
@@ -393,12 +394,12 @@ export interface Replacements {
 
 export abstract class Statement {
 	abstract walkExpressions(handler: ExpressionHandler): void
-	abstract walkStatements(handler: StatementHandler): void
+	abstract walkBlocks(handler: BlockHandler): void
 	abstract replace(replacements: Replacements): Statement
 	abstract toSections(enclosingLoop?: LoopReference): Section[]
 }
 abstract class PrimitiveStatement extends Statement {
-	walkStatements(handler: StatementHandler) { handler(this) }
+	walkBlocks() {}
 }
 export class ExpressionStatement extends PrimitiveStatement {
 	constructor(public readonly exp: Expression) { super() }
@@ -468,10 +469,11 @@ export class IfStatement extends Statement {
 		for (const statement of this.ifBlock) statement.walkExpressions(handler)
 		for (const statement of this.elseBlock) statement.walkExpressions(handler)
 	}
-	walkStatements(handler: StatementHandler) {
-		handler(this)
-		for (const statement of this.ifBlock) statement.walkStatements(handler)
-		for (const statement of this.elseBlock) statement.walkStatements(handler)
+	walkBlocks(handler: BlockHandler) {
+		handler(this.ifBlock)
+		handler(this.elseBlock)
+		for (const statement of this.ifBlock) statement.walkBlocks(handler)
+		for (const statement of this.elseBlock) statement.walkBlocks(handler)
 	}
 	replace(replacements: Replacements) {
 		const {expressions} = replacements
@@ -526,9 +528,9 @@ export class WhileStatement extends Statement {
 		this.cond.walk(handler)
 		for (const statement of this.block) statement.walkExpressions(handler)
 	}
-	walkStatements(handler: StatementHandler) {
-		handler(this)
-		for (const statement of this.block) statement.walkStatements(handler)
+	walkBlocks(handler: BlockHandler) {
+		handler(this.block)
+		for (const statement of this.block) statement.walkBlocks(handler)
 	}
 	replace(replacements: Replacements) {
 		const {expressions} = replacements
@@ -578,10 +580,10 @@ export class SwitchStatement extends Statement {
 			for (const statement of block) statement.walkExpressions(handler)
 		}
 	}
-	walkStatements(handler: StatementHandler) {
-		handler(this)
+	walkBlocks(handler: BlockHandler) {
 		for (const {block} of this.cases) {
-			for (const statement of block) statement.walkStatements(handler)
+			handler(block)
+			for (const statement of block) statement.walkBlocks(handler)
 		}
 	}
 	replace(replacements: Replacements) {
@@ -620,9 +622,9 @@ export class SynchronizedStatement extends Statement {
 		this.obj.walk(handler)
 		for (const statement of this.block) statement.walkExpressions(handler)
 	}
-	walkStatements(handler: StatementHandler) {
-		handler(this)
-		for (const statement of this.block) statement.walkStatements(handler)
+	walkBlocks(handler: BlockHandler) {
+		handler(this.block)
+		for (const statement of this.block) statement.walkBlocks(handler)
 	}
 	replace(replacements: Replacements) {
 		const {expressions} = replacements
@@ -661,14 +663,18 @@ export const blockToString = (block: Block) =>
 function isLabelNeeded(loopOrSwitch: WhileStatement | SwitchStatement) {
 	const {label} = loopOrSwitch
 	let labelNeeded = false
-	loopOrSwitch.walkStatements(statement => { //look for break/continue referencing this loop inside a different loop
-		const isLoopOrSwitch = statement instanceof WhileStatement || statement instanceof SwitchStatement
-		if (isLoopOrSwitch && statement !== loopOrSwitch) {
-			statement.walkStatements(statement => {
-				if (statement instanceof BreakStatement || statement instanceof ContinueStatement) {
-					if (statement.loop === label) labelNeeded = true
-				}
-			})
+	loopOrSwitch.walkBlocks(block => { //look for break/continue referencing this loop inside a different loop
+		for (const statement of block) {
+			const isLoopOrSwitch = statement instanceof WhileStatement || statement instanceof SwitchStatement
+			if (isLoopOrSwitch && statement !== loopOrSwitch) {
+				statement.walkBlocks(block => {
+					for (const statement of block) {
+						if (statement instanceof BreakStatement || statement instanceof ContinueStatement) {
+							if (statement.loop === label) labelNeeded = true
+						}
+					}
+				})
+			}
 		}
 	})
 	return labelNeeded
