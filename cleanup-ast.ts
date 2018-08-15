@@ -511,3 +511,11 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 	})
 	return replaceBlock(block, {expressions: replacements, statements: new Map})
 }
+
+export function getUsedVariables(block: Block) {
+	const variables = new Set<string>()
+	walkBlockExpressions(block, expression => {
+		if (expression instanceof Variable) variables.add(expression.toString())
+	})
+	return variables
+}

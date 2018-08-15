@@ -646,11 +646,8 @@ export const flatten = <T>(segments: T[][]): T[] =>
 	([] as T[]).concat(...segments)
 export function replaceBlock(block: Block, replacements: Replacements): Block {
 	const {statements} = replacements
-	return flatten(block.map(statement =>
-		(statements.get(statement) || [statement]).map(statement =>
-			statement.replace(replacements)
-		)
-	))
+	return flatten(block.map(statement => statements.get(statement) || [statement]))
+		.map(statement => statement.replace(replacements))
 }
 export const blockToSections = (block: Block, enclosingLoop?: LoopReference) =>
 	flatten(block.map(statement => statement.toSections(enclosingLoop)))
@@ -665,8 +662,7 @@ function isLabelNeeded(loopOrSwitch: WhileStatement | SwitchStatement) {
 	let labelNeeded = false
 	loopOrSwitch.walkBlocks(block => { //look for break/continue referencing this loop inside a different loop
 		for (const statement of block) {
-			const isLoopOrSwitch = statement instanceof WhileStatement || statement instanceof SwitchStatement
-			if (isLoopOrSwitch && statement !== loopOrSwitch) {
+			if (statement instanceof WhileStatement || statement instanceof SwitchStatement) {
 				statement.walkBlocks(block => {
 					for (const statement of block) {
 						if (statement instanceof BreakStatement || statement instanceof ContinueStatement) {

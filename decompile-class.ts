@@ -2,7 +2,7 @@ import {AccessFlags} from './access-flags-parser'
 import {blockToSections, IndentedLines, Section, sectionsToString} from './ast'
 import {Code} from './bytecode-parser'
 import {ClassFile} from './class-file-parser'
-import {cleanup, convertClassString, resolvePackageClasses} from './cleanup-ast'
+import {cleanup, convertClassString, getUsedVariables, resolvePackageClasses} from './cleanup-ast'
 import {CodeAttribute} from './code-parser'
 import {parseMethodAST} from './control-flow'
 import {doubleWidthType, getArgTypes, getType} from './descriptor'
@@ -88,12 +88,14 @@ function classToSections(clazz: ClassFile): Section[] {
 		const declarations: string[] = []
 		let methodSections: Section[]
 		if (instructions) {
-			const block = parseMethodAST(instructions)
-			const cleanedBlock = cleanup(block)
+			const cleanedBlock = cleanup(parseMethodAST(instructions))
 			const importResolvedBlock = resolvePackageClasses(cleanedBlock, imports)
 			methodSections = blockToSections(importResolvedBlock)
 			const localTypes = getLocalTypes(instructions, paramLocalIndex)
-			for (const [local, type] of localTypes) declarations.push(`${type} ${local};`)
+			const usedVariables = getUsedVariables(cleanedBlock)
+			for (const [local, type] of localTypes) {
+				if (usedVariables.has(local)) declarations.push(`${type} ${local};`)
+			}
 		}
 		else methodSections = ['// Could not parse method']
 		const nameString = name.getValue(constantPool)
