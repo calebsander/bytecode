@@ -73,28 +73,31 @@ function classToSections(clazz: ClassFile): Section[] {
 			if (parsedAttribute.type === CODE) {
 				({instructions} = parsedAttribute.value as CodeAttribute)
 				console.log(name.getValue(constantPool))
-				if (instructions.size < 100) console.log(inspect(instructions, true, Infinity, true))
+				if (instructions.size < 100) console.log(inspect(instructions, false, Infinity, true))
 				console.log()
 				break
 			}
 		}
 		const descriptorString = descriptor.getValue(constantPool)
+		const argTypes = new Map<number, string>()
 		const params: string[] = []
 		let paramLocalIndex = accessFlags.static ? 0 : 1
 		for (const type of getArgTypes(descriptorString)) {
+			argTypes.set(paramLocalIndex, type)
 			params.push(`${convertClassString(type, imports)} ${varName(paramLocalIndex)}`)
 			paramLocalIndex += doubleWidthType(type) ? 2 : 1
 		}
+		const returnType = getType(descriptorString)
 		const declarations: string[] = []
 		let methodSections: Section[]
 		if (instructions) {
-			const cleanedBlock = cleanup(parseMethodAST(instructions))
-			const importResolvedBlock = resolvePackageClasses(cleanedBlock, imports)
-			methodSections = blockToSections(importResolvedBlock)
 			const localTypes = getLocalTypes(instructions, paramLocalIndex)
-			const usedVariables = getUsedVariables(cleanedBlock)
+			const block = cleanup(parseMethodAST(instructions), argTypes, localTypes, returnType)
+			const importResolvedBlock = resolvePackageClasses(block, imports)
+			methodSections = blockToSections(importResolvedBlock)
+			const usedVariables = getUsedVariables(block)
 			for (const [local, type] of localTypes) {
-				if (usedVariables.has(local)) declarations.push(`${type} ${local};`)
+				if (usedVariables.has(local)) declarations.push(`${type} ${varName(local)};`)
 			}
 		}
 		else methodSections = ['// Could not parse method']
@@ -104,7 +107,7 @@ function classToSections(clazz: ClassFile): Section[] {
 			: accessFlagsToString(accessFlags, isInterface) +
 				(nameString === '<init>'
 					? shortClassName
-					: convertClassString(getType(descriptorString), imports) + ' ' +
+					: convertClassString(returnType, imports) + ' ' +
 						nameString
 				) +
 				`(${params.join(', ')})`

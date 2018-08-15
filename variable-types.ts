@@ -21,12 +21,12 @@ export type Primitive
 	| 'int'
 	| 'long'
 export type LocalType = Primitive | 'Object'
-export function getLocalTypes(instructions: Code, localStartIndex: number): Map<string, string> {
+export function getLocalTypes(instructions: Code, localStartIndex: number): Map<number, string> {
 	const loadStoreTypes = new Map<number, LocalType>()
 	for (const {instruction} of instructions.values()) instruction.setLocalTypes(loadStoreTypes)
-	const namedTypes = new Map<string, string>()
+	const namedTypes = new Map<number, string>()
 	for (const [n, type] of loadStoreTypes) {
-		if (n >= localStartIndex) namedTypes.set(varName(n), type)
+		if (n >= localStartIndex) namedTypes.set(n, type)
 	}
 	/*
 		TODO: get actual class of Object types - is this even possible?

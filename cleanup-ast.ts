@@ -34,6 +34,7 @@ import {
 	WhileStatement
 } from './ast'
 
+const BOOLEAN = 'boolean'
 const NEGATED_COMPARISONS = new Map<BinaryOp, BinaryOp>([
 	['==', '!='],
 	['!=', '=='],
@@ -56,11 +57,9 @@ function walkBlocks(block: Block, handler: BlockHandler) {
 	for (const statement of block) statement.walkBlocks(handler)
 }
 const isTrue = (cond: Expression) =>
-	(cond instanceof BooleanLiteral && cond.b) ||
-	(cond instanceof IntegerLiteral && String(cond.i) === '1') //string comparison since it might be a BigInt
+	cond instanceof BooleanLiteral && cond.b
 const isFalse = (cond: Expression) =>
-	(cond instanceof BooleanLiteral && !cond.b) ||
-	(cond instanceof IntegerLiteral && !cond.i)
+	cond instanceof BooleanLiteral && !cond.b
 
 type CleanupStrategy = (block: Block) => Replacements
 
@@ -112,7 +111,6 @@ const avoidNegation: CleanupStrategy = block => {
 		statements: new Map
 	}
 }
-//TODO: this isn't smart enough to distinguish between cond ? true : false and cond ? 1 : 0
 const resolveBooleanTernary: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
 	walkBlockExpressions(block, expression => {
@@ -448,11 +446,146 @@ const STRATEGIES = [
 	shorthandAssignments
 ]
 
-export function cleanup(block: Block): Block {
+function walkBooleanContextExpressions(block: Block, notBooleanVars: Set<number>, returnBoolean: boolean, handler: ExpressionHandler) {
+	//Process an expression which has been inferred by context to be boolean
+	const processBooleanExpression: ExpressionHandler = expression => {
+		handler(expression)
+		if (expression instanceof UnaryOperation) {
+			if (expression.op === '!') processBooleanExpression(expression.arg)
+		}
+		else if (expression instanceof BinaryOperation) {
+			const {op, arg1, arg2} = expression
+			switch (op) {
+				case '&&':
+				case '||':
+				case '&':
+				case '|':
+				case '^':
+				case '==':
+				case '!=':
+					//Need to verify types of arguments since == and !=
+					//can be applied to non-booleans and still return boolean result
+					if (arg1.maybeBoolean(notBooleanVars) && arg2.maybeBoolean(notBooleanVars)) {
+						processBooleanExpression(arg1)
+						processBooleanExpression(arg2)
+					}
+			}
+		}
+		else if (expression instanceof Ternary) {
+			const {ifTrue, ifFalse} = expression
+			processBooleanExpression(ifTrue)
+			processBooleanExpression(ifFalse)
+		}
+	}
+	//Find expressions known to be boolean; these are:
+	walkBlockExpressions(block, expression => {
+		if (expression instanceof Assignment) {
+			const {lhs, rhs} = expression
+			//Something that gets a boolean assigned to it
+			if (rhs.maybeBoolean(notBooleanVars)) processBooleanExpression(lhs)
+			//Something assigned to a boolean
+			if ((lhs as Expression).maybeBoolean(notBooleanVars)) processBooleanExpression(rhs)
+		}
+		else if (expression instanceof FunctionCall) {
+			const {args, argTypes} = expression
+			for (let i = 0; i < args.length; i++) {
+				//Something passed to a function as a boolean argument
+				if (argTypes[i] === BOOLEAN) processBooleanExpression(args[i])
+			}
+		}
+		//Something used as a ternary condition
+		else if (expression instanceof Ternary) processBooleanExpression(expression.cond)
+	})
+	walkBlockStatements(block, statement => {
+		//Something used as an if or while condition
+		if (statement instanceof IfStatement || statement instanceof WhileStatement) {
+			processBooleanExpression(statement.cond)
+		}
+		//Something returned from a function which returns booleans
+		else if (returnBoolean && statement instanceof ReturnStatement) {
+			const {exp} = statement
+			if (!exp) throw new Error('Expected non-void return')
+			processBooleanExpression(exp)
+		}
+	})
+}
+function getNotBooleanVars(block: Block, argTypes: Map<number, string>, localTypes: Map<number, string>, returnBoolean: boolean) {
+	const notBooleanVars = new Set<number>()
+	//Boolean argument types are explicitly boolean (inferred from descriptor)
+	for (const [n, type] of argTypes) {
+		if (type !== BOOLEAN) notBooleanVars.add(n)
+	}
+	//Boolean local types are only known to be ints (inferred from load/store instructions)
+	for (const [n, type] of localTypes) {
+		if (type !== 'int') notBooleanVars.add(n)
+	}
+	//Continue using new information to infer variables as non-booleans until no new information is available
+	let initialSize: number
+	do {
+		initialSize = notBooleanVars.size
+		//Count number of instances of each variable
+		const timesSeen = new Map<number, number>()
+		walkBlockExpressions(block, expression => {
+			if (expression instanceof Variable) {
+				const {n} = expression
+				if (localTypes.has(n)) timesSeen.set(n, (timesSeen.get(n) || 0) + 1)
+			}
+		})
+		//Count number of times variable is used possibly as a boolean
+		const timesSeenCorrectly = new Map<number, number>()
+		walkBooleanContextExpressions(block, notBooleanVars, returnBoolean, expression => {
+			if (expression instanceof Variable) {
+				const {n} = expression
+				if (localTypes.has(n)) {
+					timesSeenCorrectly.set(n, (timesSeenCorrectly.get(n) || 0) + 1)
+				}
+			}
+		})
+		//Reject variables which are definitely used as non-booleans
+		for (const [n, times] of timesSeen) {
+			if (times !== timesSeenCorrectly.get(n)) notBooleanVars.add(n)
+		}
+	} while (notBooleanVars.size !== initialSize)
+	return notBooleanVars
+}
+const xor = (a: boolean, b: boolean) => +a ^ +b
+export function cleanup(block: Block, argTypes: Map<number, string>, localTypes: Map<number, string>, returnType: string): Block {
+	const returnBoolean = returnType === BOOLEAN
+	const notBooleanVars = getNotBooleanVars(block, argTypes, localTypes, returnBoolean)
+	for (const n of localTypes.keys()) {
+		if (!notBooleanVars.has(n)) localTypes.set(n, BOOLEAN)
+	}
+	const strategies: CleanupStrategy[] = [
+		...STRATEGIES,
+		block => {
+			const replacements = new Map<Expression, Expression>()
+			//Convert 1 and 0 to true and false, if known to be boolean
+			walkBooleanContextExpressions(block, notBooleanVars, returnBoolean, expression => {
+				if (expression instanceof IntegerLiteral) {
+					replacements.set(expression, new BooleanLiteral(!!expression.i))
+				}
+			})
+			//Simplify ==/!= true/false
+			walkBlockExpressions(block, expression => {
+				if (expression instanceof BinaryOperation) {
+					const {op, arg1, arg2} = expression
+					if ((op === '==' || op === '!=') && arg2 instanceof BooleanLiteral) {
+						replacements.set(expression,
+							xor(op === '==', arg2.b) ? new UnaryOperation('!', arg1) : arg1
+						)
+					}
+				}
+			})
+			return {
+				expressions: replacements,
+				statements: new Map
+			}
+		}
+	]
 	let someReplaced: boolean
 	do {
 		someReplaced = false
-		for (const strategy of STRATEGIES) {
+		for (const strategy of strategies) {
 			const replacements = strategy(block)
 			if (replacements.expressions.size || replacements.statements.size) {
 				block = replaceBlock(block, replacements)
@@ -513,9 +646,9 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 }
 
 export function getUsedVariables(block: Block) {
-	const variables = new Set<string>()
+	const variables = new Set<number>()
 	walkBlockExpressions(block, expression => {
-		if (expression instanceof Variable) variables.add(expression.toString())
+		if (expression instanceof Variable) variables.add(expression.n)
 	})
 	return variables
 }

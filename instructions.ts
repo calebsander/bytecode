@@ -114,24 +114,26 @@ abstract class ReturnInstruction extends Instruction {
 	}
 }
 abstract class InvokeInstruction extends Instruction {
-	private readonly argsLength: number
+	private readonly argTypes: string[]
 	private readonly isVoid: boolean
 	private readonly doubleWidth: boolean
+	private readonly isBoolean: boolean
 	constructor(
 		public readonly className: string,
 		public readonly method: Ref
 	) {
 		super()
 		const {descriptor} = method.nameAndType
-		this.argsLength = getArgTypes(descriptor).length
+		this.argTypes = getArgTypes(descriptor)
 		const returnType = getType(descriptor)
 		this.isVoid = returnType === 'void'
 		this.doubleWidth = doubleWidthType(returnType)
+		this.isBoolean = returnType === 'boolean'
 	}
 	get isStatic() { return false }
 	execute(stack: Stack, block: Block) {
 		const {class: clazz, nameAndType} = this.method
-		const args = new Array<Expression>(this.argsLength)
+		const args = new Array<Expression>(this.argTypes.length)
 		for (let i = args.length - 1; i >= 0; i--) args[i] = forcePop(stack)
 		const obj = this.isStatic
 			? new ClassReference(clazz)
@@ -144,11 +146,11 @@ abstract class InvokeInstruction extends Instruction {
 			}
 			else if (obj instanceof ThisLiteral) {
 				const thisObj = new ThisLiteral(clazz.name !== this.className)
-				result = new FunctionCall(thisObj, null, args, false)
+				result = new FunctionCall(thisObj, null, args, this.argTypes, false, false)
 			}
 			else throw new Error('Unexpected <init>() call')
 		}
-		else result = new FunctionCall(obj, nameAndType, args, this.doubleWidth)
+		else result = new FunctionCall(obj, nameAndType, args, this.argTypes, this.doubleWidth, this.isBoolean)
 		if (result) {
 			if (this.isVoid) block.push(new ExpressionStatement(result))
 			else stack.push(result)
@@ -166,11 +168,34 @@ abstract class FieldInstruction extends Instruction {
 	public readonly clazz: Class
 	public readonly nameAndType: NameAndType
 	protected readonly doubleWidth: boolean
+	protected readonly isBoolean: boolean
 	constructor({class: clazz, nameAndType}: Ref) {
 		super()
 		this.clazz = clazz
 		this.nameAndType = nameAndType
-		this.doubleWidth = doubleWidthType(getType(nameAndType.descriptor))
+		const type = getType(nameAndType.descriptor)
+		this.doubleWidth = doubleWidthType(type)
+		this.isBoolean = type === 'boolean'
+	}
+}
+abstract class InstanceFieldInstruction extends FieldInstruction {
+	protected getField(stack: Stack) {
+		return new FieldAccess(
+			forcePop(stack),
+			this.nameAndType,
+			this.doubleWidth,
+			this.isBoolean
+		)
+	}
+}
+abstract class StaticFieldInstruction extends FieldInstruction {
+	protected get field() {
+		return new FieldAccess(
+			new ClassReference(this.clazz),
+			this.nameAndType,
+			this.doubleWidth,
+			this.isBoolean
+		)
 	}
 }
 abstract class BinaryOpInstruction extends Instruction {
@@ -266,6 +291,7 @@ export class ArrayLength extends Instruction {
 		stack.push(new FieldAccess(
 			forcePop(stack),
 			{name: 'length'},
+			false,
 			false
 		))
 	}
@@ -354,22 +380,14 @@ export class FStore extends LocalStoreInstruction {
 	get type(): LocalType { return 'float' }
 }
 export class FSub extends SubInstruction {}
-export class GetField extends FieldInstruction {
+export class GetField extends InstanceFieldInstruction {
 	execute(stack: Stack) {
-		stack.push(new FieldAccess(
-			forcePop(stack),
-			this.nameAndType,
-			this.doubleWidth
-		))
+		stack.push(this.getField(stack))
 	}
 }
-export class GetStatic extends FieldInstruction {
+export class GetStatic extends StaticFieldInstruction {
 	execute(stack: Stack) {
-		stack.push(new FieldAccess(
-			new ClassReference(this.clazz),
-			this.nameAndType,
-			this.doubleWidth
-		))
+		stack.push(this.field)
 	}
 }
 export class I2B extends PrimitiveCast {
@@ -561,27 +579,22 @@ export class Pop extends Instruction {
 		}
 	}
 }
-export class PutField extends FieldInstruction {
+export class PutField extends InstanceFieldInstruction {
 	execute(stack: Stack, block: Block) {
-		const value = forcePop(stack),
-		      obj   = forcePop(stack)
+		const value = forcePop(stack)
 		block.push(new ExpressionStatement(
 			new Assignment(
-				new FieldAccess(obj, this.nameAndType, this.doubleWidth),
+				this.getField(stack),
 				value
 			)
 		))
 	}
 }
-export class PutStatic extends FieldInstruction {
+export class PutStatic extends StaticFieldInstruction {
 	execute(stack: Stack, block: Block) {
 		block.push(new ExpressionStatement(
 			new Assignment(
-				new FieldAccess(
-					new ClassReference(this.clazz),
-					this.nameAndType,
-					this.doubleWidth
-				),
+				this.field,
 				forcePop(stack)
 			)
 		))
@@ -597,7 +610,7 @@ export class SAStore extends ArrayStoreInstruction {}
 export class SPush extends Instruction {
 	constructor(public readonly i: number) { super() }
 	execute(stack: Stack) {
-		stack.push(new IntegerLiteral(this.i, false))
+		stack.push(new IntegerLiteral(this.i))
 	}
 }
 //Used for both tableswitch and lookupswitch

@@ -289,4 +289,18 @@ public class CodeTest {
 		Integer[] abc = (Integer[])new Object[]{1, 2, 3};
 		return abc.length;
 	}
+	public boolean booleanFunction(boolean arg) {
+		return !arg;
+	}
+	public boolean booleanUsage() {
+		boolean a = true;
+		boolean b = booleanFunction(a);
+		boolean c = a == b;
+		c = a != b;
+		return a ^ !b;
+	}
+	public int intTernary() {
+		boolean b = Math.random() > 0.5;
+		return b ? 1 : 0;
+	}
 }

@@ -20,6 +20,7 @@ export class IndentedLines {
 
 export abstract class Expression {
 	abstract readonly doubleWidth: boolean
+	abstract maybeBoolean(notBooleanVars: Set<number>): boolean
 	abstract walk(handler: ExpressionHandler): void
 	abstract replace(replacements: Map<Expression, Expression>): Expression
 	abstract toString(omitParens?: boolean): string
@@ -33,6 +34,7 @@ export class IntegerLiteral extends PrimitiveExpression {
 		public readonly i: Numeric,
 		public readonly doubleWidth = false
 	) { super() }
+	maybeBoolean() { return this.i === 0 || this.i === 1 }
 	toString() {
 		return `${this.i}${this.doubleWidth ? 'L' : ''}`
 	}
@@ -42,6 +44,7 @@ export class FloatLiteral extends PrimitiveExpression {
 		public readonly f: number,
 		public readonly doubleWidth = false
 	) { super() }
+	maybeBoolean() { return false }
 	toString() {
 		return `${this.f}${this.doubleWidth ? '' : 'F'}`
 	}
@@ -49,11 +52,13 @@ export class FloatLiteral extends PrimitiveExpression {
 export class BooleanLiteral extends PrimitiveExpression {
 	constructor(public readonly b: boolean) { super() }
 	get doubleWidth() { return false }
+	maybeBoolean() { return true }
 	toString() { return `${this.b}` }
 }
 export class StringLiteral extends PrimitiveExpression {
 	constructor(public readonly str: string) { super() }
 	get doubleWidth() { return false }
+	maybeBoolean() { return false }
 	toString() {
 		return `"${this.str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 	}
@@ -61,15 +66,18 @@ export class StringLiteral extends PrimitiveExpression {
 export class ClassLiteral extends PrimitiveExpression {
 	constructor(public readonly clazz: NameReference) { super() }
 	get doubleWidth() { return false }
+	maybeBoolean() { return false }
 	toString() { return this.clazz.name + '.class' }
 }
 export class NullLiteral extends PrimitiveExpression {
 	get doubleWidth() { return false }
+	maybeBoolean() { return false }
 	toString() { return 'null' }
 }
 export class ThisLiteral extends PrimitiveExpression {
 	constructor(public readonly isSuper = false) { super() }
 	get doubleWidth() { return false }
+	maybeBoolean() { return false }
 	toString() { return this.isSuper ? 'super' : 'this' }
 }
 export class Variable extends PrimitiveExpression {
@@ -77,6 +85,9 @@ export class Variable extends PrimitiveExpression {
 		public readonly n: number,
 		public readonly doubleWidth = false
 	) { super() }
+	maybeBoolean(notBooleanVars: Set<number>) {
+		return !notBooleanVars.has(this.n)
+	}
 	toString() { return varName(this.n) }
 }
 export type IncDec = '++' | '--'
@@ -91,6 +102,7 @@ export class UnaryOperation extends Expression {
 		public readonly arg: Expression
 	) { super() }
 	get doubleWidth() { return this.arg.doubleWidth }
+	maybeBoolean() { return this.op === '!' }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.arg.walk(handler)
@@ -142,6 +154,12 @@ export class BinaryOperation extends Expression {
 		}
 		return this.arg1.doubleWidth
 	}
+	maybeBoolean(notBooleanVars: Set<number>) {
+		return (
+			(this.op === '&' || this.op === '|' || this.op === '^') &&
+			this.arg1.maybeBoolean(notBooleanVars) && this.arg2.maybeBoolean(notBooleanVars)
+		) || !(this.op in ASSIGNMENT_BINARY_OPS)
+	}
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.arg1.walk(handler)
@@ -171,6 +189,9 @@ export class Ternary extends Expression {
 		}
 		return this.ifTrue.doubleWidth
 	}
+	maybeBoolean(notBooleanVars: Set<number>) {
+		return this.ifTrue.maybeBoolean(notBooleanVars) && this.ifFalse.maybeBoolean(notBooleanVars)
+	}
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.cond.walk(handler)
@@ -197,6 +218,11 @@ export class Assignment extends Expression {
 		public readonly op?: AssignmentBinaryOp
 	) { super() }
 	get doubleWidth() { return this.rhs.doubleWidth }
+	maybeBoolean(notBooleanVars: Set<number>) {
+		return (!this.op || this.op === '&' || this.op === '|' || this.op === '^') &&
+			(this.lhs as Expression).maybeBoolean(notBooleanVars) &&
+			this.rhs.maybeBoolean(notBooleanVars)
+	}
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.lhs.walk(handler)
@@ -220,6 +246,7 @@ interface NameReference {
 export class ClassReference extends PrimitiveExpression {
 	constructor(public readonly clazz: NameReference) { super() }
 	get doubleWidth() { return false }
+	maybeBoolean() { return false }
 	toString() { return this.clazz.name }
 }
 export class FunctionCall extends Expression {
@@ -227,8 +254,11 @@ export class FunctionCall extends Expression {
 		public readonly obj: Expression,
 		public readonly func: NameReference | null, //null if calling a constructor
 		public readonly args: Expression[],
-		public readonly doubleWidth: boolean
+		public readonly argTypes: string[],
+		public readonly doubleWidth: boolean,
+		public readonly isBoolean: boolean
 	) { super() }
+	maybeBoolean() { return this.isBoolean }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.obj.walk(handler)
@@ -241,7 +271,9 @@ export class FunctionCall extends Expression {
 			this.args.map(arg =>
 				(replacements.get(arg) || arg).replace(replacements)
 			),
-			this.doubleWidth
+			this.argTypes,
+			this.doubleWidth,
+			this.isBoolean
 		)
 	}
 	toString() {
@@ -255,8 +287,10 @@ export class FieldAccess extends Expression {
 	constructor(
 		public readonly obj: Expression,
 		public readonly field: NameReference,
-		public readonly doubleWidth: boolean
+		public readonly doubleWidth: boolean,
+		public readonly isBoolean: boolean
 	) { super() }
+	maybeBoolean() { return this.isBoolean }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.obj.walk(handler)
@@ -265,7 +299,8 @@ export class FieldAccess extends Expression {
 		return new FieldAccess(
 			(replacements.get(this.obj) || this.obj).replace(replacements),
 			this.field,
-			this.doubleWidth
+			this.doubleWidth,
+			this.isBoolean
 		)
 	}
 	toString() {
@@ -278,6 +313,7 @@ export class ArrayAccess extends Expression {
 		public readonly index: Expression,
 		public readonly doubleWidth: boolean
 	) { super() }
+	maybeBoolean() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.arr.walk(handler)
@@ -300,6 +336,7 @@ export class NewObject extends Expression {
 		public args?: Expression[]
 	) { super() }
 	get doubleWidth() { return false }
+	maybeBoolean() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		for (const arg of this.args || []) arg.walk(handler)
@@ -328,6 +365,7 @@ export class NewArray extends Expression {
 		public elements?: Expression[]
 	) { super() }
 	get doubleWidth() { return false }
+	maybeBoolean() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		for (const dimension of this.dimensions) dimension.walk(handler)
@@ -368,6 +406,7 @@ export class Cast extends Expression {
 		const {name} = this.type
 		return name === 'long' || name === 'double'
 	}
+	maybeBoolean() { return false }
 	walk(handler: ExpressionHandler) {
 		handler(this)
 		this.exp.walk(handler)
