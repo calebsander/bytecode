@@ -414,6 +414,10 @@ const shorthandAssignments: CleanupStrategy = block => {
 						const arg2String = `${arg2}`
 						if (arg2String === '1') incExpression = new UnaryOperation({op: '++', post: false}, lhs)
 						else if (arg2String === '-1') incExpression = new UnaryOperation({op: '--', post: false}, lhs)
+						else {
+							const {i, doubleWidth} = arg2
+							if (i < 0) incExpression = new Assignment(lhs, new IntegerLiteral(-i, doubleWidth), '-')
+						}
 					}
 					replacements.set(
 						expression,
