@@ -258,33 +258,6 @@ const resolveTrueIfCondition: CleanupStrategy = block => {
 		statements: replacements
 	}
 }
-const resolveIfBodyOfWhile: CleanupStrategy = block => {
-	const replacements = new Map<Statement, Statement[]>()
-	walkBlockStatements(block, statement => {
-		if (statement instanceof WhileStatement) {
-			const {cond, block, label} = statement
-			if (isFalse(cond) && block.length === 1) {
-				const [statement] = block
-				if (statement instanceof IfStatement) {
-					const {cond, ifBlock, elseBlock} = statement
-					if (!elseBlock.length) {
-						replacements.set(statement, [
-							new IfStatement(
-								new UnaryOperation('!', cond),
-								[new BreakStatement(label)],
-							),
-							...ifBlock
-						])
-					}
-				}
-			}
-		}
-	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
-}
 const collapseCasesWithDefault: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
 	walkBlockStatements(block, statement => {
@@ -294,34 +267,12 @@ const collapseCasesWithDefault: CleanupStrategy = block => {
 			if (defaultIndex > -1) {
 				let firstEmptyIndex = defaultIndex
 				while (firstEmptyIndex && !cases[firstEmptyIndex - 1].block.length) firstEmptyIndex--
-				if (firstEmptyIndex < defaultIndex) {
-					replacements.set(statement, [new SwitchStatement(
-						val,
-						cases.slice(0, firstEmptyIndex).concat(cases.slice(defaultIndex)),
-						label
-					)])
+				const emptyFinalDefault = defaultIndex === cases.length - 1 && !cases[defaultIndex].block.length
+				if (firstEmptyIndex < defaultIndex || emptyFinalDefault) {
+					const newCases = cases.slice(0, firstEmptyIndex)
+					if (!emptyFinalDefault) newCases.push(...cases.slice(defaultIndex))
+					replacements.set(statement, [new SwitchStatement(val, newCases, label)])
 				}
-			}
-		}
-	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
-}
-const removeEmptyLastCase: CleanupStrategy = block => {
-	const replacements = new Map<Statement, Statement[]>()
-	walkBlockStatements(block, statement => {
-		if (statement instanceof SwitchStatement) {
-			const {val, cases, label} = statement
-			let removeFrom = cases.length
-			while (removeFrom && !cases[removeFrom - 1].block.length) removeFrom--
-			if (removeFrom < cases.length) {
-				replacements.set(statement, [new SwitchStatement(
-					val,
-					cases.slice(0, removeFrom),
-					label
-				)])
 			}
 		}
 	})
@@ -358,12 +309,11 @@ const identifyStringSwitch: CleanupStrategy = block => {
 				if (!(ifEquals instanceof IfStatement)) continue testIndex
 				const {cond, ifBlock, elseBlock} = ifEquals
 				const [ifBreakStatement] = ifBlock
-				if (!(cond instanceof BinaryOperation && ifBlock.length === 1 && ifBreakStatement instanceof BreakStatement &&
+				if (!(cond instanceof UnaryOperation && ifBlock.length === 1 && ifBreakStatement instanceof BreakStatement &&
 					ifBreakStatement.loop === label && !elseBlock.length)) continue testIndex
-				const {op, arg1, arg2} = cond
-				// TODO: 'equals() == 0' will need to be changed to '!equals()'
-				if (!(op === '==' && arg1 instanceof FunctionCall && arg2 instanceof IntegerLiteral && !arg2.i && arg1)) continue testIndex
-				const {obj, func, args} = arg1
+				const {op, arg} = cond
+				if (!(op === '!' && arg instanceof FunctionCall)) continue testIndex
+				const {obj, func, args} = arg
 				if (!(obj instanceof Variable && obj.n === valVariableN && func && func.name === 'equals' && args.length === 1)) continue testIndex
 				const [str] = args
 				if (!(str instanceof StringLiteral && setIndex instanceof ExpressionStatement && setIndex.exp instanceof Assignment)) continue testIndex
@@ -440,9 +390,7 @@ const STRATEGIES = [
 	trueDoWhileToWhile,
 	identifyWhileCondition,
 	resolveTrueIfCondition,
-	resolveIfBodyOfWhile,
 	collapseCasesWithDefault,
-	removeEmptyLastCase,
 	identifyStringSwitch,
 	shorthandAssignments
 ]
@@ -520,33 +468,38 @@ function getNotBooleanVars(block: Block, argTypes: Map<number, string>, localTyp
 	for (const [n, type] of localTypes) {
 		if (type !== 'int') notBooleanVars.add(n)
 	}
+	//Count number of instances of each variable
+	const timesSeen = new Map<number, number>()
+	walkBlockExpressions(block, expression => {
+		if (expression instanceof Variable) {
+			const {n} = expression
+			if (localTypes.has(n) && !notBooleanVars.has(n)) {
+				timesSeen.set(n, (timesSeen.get(n) || 0) + 1)
+			}
+		}
+	})
 	//Continue using new information to infer variables as non-booleans until no new information is available
 	let initialSize: number
 	do {
 		initialSize = notBooleanVars.size
-		//Count number of instances of each variable
-		const timesSeen = new Map<number, number>()
-		walkBlockExpressions(block, expression => {
-			if (expression instanceof Variable) {
-				const {n} = expression
-				if (localTypes.has(n)) timesSeen.set(n, (timesSeen.get(n) || 0) + 1)
-			}
-		})
 		//Count number of times variable is used possibly as a boolean
 		const timesSeenCorrectly = new Map<number, number>()
 		walkBooleanContextExpressions(block, notBooleanVars, returnBoolean, expression => {
 			if (expression instanceof Variable) {
 				const {n} = expression
-				if (localTypes.has(n)) {
+				if (timesSeen.has(n)) {
 					timesSeenCorrectly.set(n, (timesSeenCorrectly.get(n) || 0) + 1)
 				}
 			}
 		})
 		//Reject variables which are definitely used as non-booleans
 		for (const [n, times] of timesSeen) {
-			if (times !== timesSeenCorrectly.get(n)) notBooleanVars.add(n)
+			if (times !== timesSeenCorrectly.get(n)) {
+				notBooleanVars.add(n)
+				timesSeen.delete(n)
+			}
 		}
-	} while (notBooleanVars.size !== initialSize)
+	} while (notBooleanVars.size > initialSize)
 	return notBooleanVars
 }
 const xor = (a: boolean, b: boolean) => +a ^ +b
