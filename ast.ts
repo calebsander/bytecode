@@ -1,6 +1,5 @@
 import {varName} from './variable-types'
 
-export type Numeric = number | BigInt
 export type ExpressionHandler = (exp: Expression) => void
 export type Section = IndentedLines | string
 export class IndentedLines {
@@ -31,7 +30,7 @@ abstract class PrimitiveExpression extends Expression {
 }
 export class IntegerLiteral extends PrimitiveExpression {
 	constructor(
-		public readonly i: Numeric,
+		public readonly i: number | bigint,
 		public readonly doubleWidth = false
 	) { super() }
 	maybeBoolean() { return this.i === 0 || this.i === 1 }

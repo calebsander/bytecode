@@ -167,10 +167,10 @@ export const bytecodeParser = ({constantPool, className, isStatic}: MethodContex
 					instruction = new i.IConst(5)
 					break
 				case 0x09:
-					instruction = new i.LConst(0)
+					instruction = new i.LConst(0n)
 					break
 				case 0x0a:
-					instruction = new i.LConst(1)
+					instruction = new i.LConst(1n)
 					break
 				case 0x0b:
 					instruction = new i.FConst(0)

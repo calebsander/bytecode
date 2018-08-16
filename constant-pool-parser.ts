@@ -105,7 +105,7 @@ export type LiteralConstant
 	= {type: 'class', name: string}
 	| {type: 'string', value: string}
 	| {type: 'int' | 'float' | 'double', value: number}
-	| {type: 'long', value: BigInt}
+	| {type: 'long', value: bigint}
 const CLASS_PARSER: PoolValueParser<ReferencedValue<Class & LiteralConstant>> = pool => data => {
 	const {result: nameIndex, length} = parseShort(data)
 	return {
@@ -158,7 +158,7 @@ const LONG_PARSER: PoolValueParser<ReferencedValue<LiteralConstant>> = _ => data
 	return {
 		result: {
 			type: new ConstantValue<'long'>('long'),
-			value: new ConstantValue(BigInt(upper) << BigInt(32) | BigInt(lower))
+			value: new ConstantValue(BigInt(upper) << 32n | BigInt(lower))
 		},
 		length,
 		entries: 2

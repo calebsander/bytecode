@@ -96,7 +96,7 @@ abstract class ArrayStoreInstruction extends Instruction {
 				elements = []
 				arr.elements = elements
 			}
-			elements[index.i] = value
+			elements[index.i as number] = value
 		}
 		else {
 			block.push(new ExpressionStatement(
@@ -469,7 +469,7 @@ export class LAnd extends AndInstruction {}
 export class LAStore extends ArrayStoreInstruction {}
 export class LCmp extends SubInstruction {} //not precisely true, but this seems to be how javac uses it
 export class LConst extends Instruction {
-	constructor(public readonly l: BigInt) { super() }
+	constructor(public readonly l: bigint) { super() }
 	execute(stack: Stack) {
 		stack.push(new IntegerLiteral(this.l, true))
 	}

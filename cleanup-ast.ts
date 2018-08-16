@@ -371,15 +371,15 @@ const identifyStringSwitch: CleanupStrategy = block => {
 				const [str] = args
 				if (!(str instanceof StringLiteral && setIndex instanceof ExpressionStatement && setIndex.exp instanceof Assignment)) continue testIndex
 				const {lhs, rhs} = setIndex.exp
-				if (!(lhs instanceof Variable && lhs.n === indexVariableN && rhs instanceof IntegerLiteral)) continue testIndex
-				indexValues.set(rhs.i, str)
+				if (!(lhs instanceof Variable && lhs.n === indexVariableN && rhs instanceof IntegerLiteral && !rhs.doubleWidth)) continue testIndex
+				indexValues.set(rhs.i as number, str)
 			}
 			if (!(indexSwitch instanceof SwitchStatement && indexSwitch.val instanceof Variable && indexSwitch.val.n === indexVariableN)) continue
 			const newCases: Case[] = []
 			for (const {exp, block} of indexSwitch.cases) {
 				if (exp) {
-					if (!(exp instanceof IntegerLiteral)) continue testIndex
-					const str = indexValues.get(exp.i)
+					if (!(exp instanceof IntegerLiteral && !exp.doubleWidth)) continue testIndex
+					const str = indexValues.get(exp.i as number)
 					if (!str) continue testIndex
 					newCases.push({exp: str, block})
 				}

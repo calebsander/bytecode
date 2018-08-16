@@ -4,8 +4,8 @@
 	"description": "Decompile Java ByteCode",
 	"main": "main.js",
 	"dependencies": {
-		"@types/node": "^9.4.6",
-		"typescript": "^2.9.2"
+		"@types/node": "^10.7.1",
+		"typescript": "calebsander/TypeScript#feature/bigint-lkg"
 	},
 	"scripts": {
 		"build": "tsc",
