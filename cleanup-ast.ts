@@ -249,10 +249,8 @@ const resolveTrueIfCondition: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof IfStatement) {
-			const {cond, elseBlock} = statement
-			if (isTrue(cond) && !elseBlock.length) {
-				replacements.set(statement, statement.ifBlock)
-			}
+			const {cond, ifBlock, elseBlock} = statement
+			if (isTrue(cond) && !elseBlock.length) replacements.set(statement, ifBlock)
 		}
 	})
 	return {
@@ -294,9 +292,8 @@ const collapseCasesWithDefault: CleanupStrategy = block => {
 			const {val, cases, label} = statement
 			const defaultIndex = cases.findIndex(({exp}) => !exp)
 			if (defaultIndex > -1) {
-				let firstEmptyIndex: number
-				for (firstEmptyIndex = defaultIndex - 1; !cases[firstEmptyIndex].block.length; firstEmptyIndex--);
-				firstEmptyIndex++;
+				let firstEmptyIndex = defaultIndex
+				while (firstEmptyIndex && !cases[firstEmptyIndex - 1].block.length) firstEmptyIndex--
 				if (firstEmptyIndex < defaultIndex) {
 					replacements.set(statement, [new SwitchStatement(
 						val,
