@@ -100,4 +100,7 @@ class ControlFlow {
 	public boolean multipleAnd() {
 		return getTrue() && getTrue() && getFalse();
 	}
+	public boolean multipleOr() {
+		return getFalse() || getTrue() || getFalse();
+	}
 }

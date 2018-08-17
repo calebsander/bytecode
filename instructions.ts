@@ -36,12 +36,6 @@ export function forcePop(stack: Stack) {
 	return stackTop
 }
 
-export class MonitorExitError extends Error {
-	constructor(public readonly nextInstruction?: number) {
-		super('Cannot execute monitorexit')
-	}
-}
-
 export abstract class Instruction {
 	abstract execute(stack: Stack, block: Block): void
 	setLocalTypes(_: Map<number, LocalType>) {}
@@ -521,7 +515,7 @@ export class MonitorEnter extends Instruction {
 	execute() { throw new Error('Cannot execute monitorenter') }
 }
 export class MonitorExit extends Instruction {
-	execute() { throw new MonitorExitError }
+	execute() { throw new Error('Cannot execute monitorexit') }
 }
 export class MultiANewArray extends Instruction {
 	constructor(

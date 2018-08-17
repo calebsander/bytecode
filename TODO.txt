@@ -1,7 +1,5 @@
 Test whether old-fashioned for loops work with continues
 
-Handle || with multiple clauses
-
 Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
 
 CleanupStrategy that identifies for-in loops
