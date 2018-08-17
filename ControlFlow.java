@@ -103,4 +103,19 @@ class ControlFlow {
 	public boolean multipleOr() {
 		return getFalse() || getTrue() || getFalse();
 	}
+	public void forLoop() {
+		int a = 0;
+		for (a = 1; a < 5; a++) {
+			a = 2;
+			if (a % 2 == 0) break;
+			a = 3;
+			if (a % 3 == 0) {
+				a = 4;
+				if (Math.random() > 0.5) continue;
+				a = 5; // if this statement is removed, control-flow parsing fails
+			}
+			a = 6;
+		}
+		a = 7;
+	}
 }

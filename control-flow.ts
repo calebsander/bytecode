@@ -264,21 +264,19 @@ function parseControlFlow(
 			}
 			if (!isOr) {
 				const ifStack: Stack = []
-				const ifBlock: Block = []
-				parseControlFlow(
+				const ifBlock = parseControlFlow(
 					instructions, exceptionTable,
 					firstJumpForward, ifBlockEnd,
 					loopCounter, breaks, continues,
-					ifStack, ifBlock
+					ifStack
 				)
 				if (ifStack.length) throw new Error('Expected empty stack')
 				block.push(new IfStatement(new UnaryOperation('!', elseCondition), ifBlock, elseBlock))
 			}
 		}
-		const newStart = elseBlockEnd || ifBlockEnd
 		parseControlFlow(
 			instructions, exceptionTable,
-			newStart, end,
+			elseBlockEnd || ifBlockEnd, end,
 			loopCounter, breaks, continues,
 			stack, block
 		)

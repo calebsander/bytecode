@@ -2,9 +2,9 @@ Test whether old-fashioned for loops work with continues
 
 Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
 
-CleanupStrategy that identifies for-in loops
-
 Identify object types based on function calls
 Find how ints are being used - boolean/short/int/char by function definitions?
+
+Add type to for-in variables
 
 Decompile Enums

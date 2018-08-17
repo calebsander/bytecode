@@ -555,13 +555,16 @@ export class IfStatement extends Statement {
 		return sections
 	}
 }
-export class WhileStatement extends Statement {
+abstract class LabeledStatement extends Statement {
+	constructor(public readonly label: LoopReference) { super() }
+}
+export class WhileStatement extends LabeledStatement {
 	constructor(
 		public readonly cond: Expression,
 		public readonly block: Block,
 		public readonly doWhile: boolean,
-		public readonly label: LoopReference
-	) { super() }
+		label: LoopReference
+	) { super(label) }
 	walkExpressions(handler: ExpressionHandler) {
 		this.cond.walk(handler)
 		for (const statement of this.block) statement.walkExpressions(handler)
@@ -581,7 +584,7 @@ export class WhileStatement extends Statement {
 	}
 	toSections() {
 		const blockSections = blockToSections(this.block, this.label)
-		const labelString = isLabelNeeded(this) ? this.label.label + ': ' : ''
+		const labelString: string = isLabelNeeded(this) ? this.label.label + ': ' : ''
 		const whileCond = `while (${this.cond.toString(true)})`
 		if (this.doWhile) {
 			return [
@@ -601,16 +604,53 @@ export class WhileStatement extends Statement {
 		}
 	}
 }
+export class ForInStatement extends LabeledStatement {
+	constructor(
+		public readonly variable: Variable,
+		public readonly iterable: Expression,
+		public readonly block: Block,
+		label: LoopReference
+	) { super(label) }
+	walkExpressions(handler: ExpressionHandler) {
+		this.iterable.walk(handler)
+		for (const statement of this.block) statement.walkExpressions(handler)
+	}
+	walkBlocks(handler: BlockHandler) {
+		handler(this.block)
+		for (const statement of this.block) statement.walkBlocks(handler)
+	}
+	replace(replacements: Replacements) {
+		const {expressions} = replacements
+		return new ForInStatement(
+			this.variable,
+			(expressions.get(this.iterable) || this.iterable).replace(expressions),
+			replaceBlock(this.block, replacements),
+			this.label
+		)
+	}
+	toSections() {
+		const blockSections = blockToSections(this.block, this.label)
+		const forCond: string = (isLabelNeeded(this) ? this.label.label + ': ' : '') +
+			`for (${this.variable.toString()} : ${this.iterable.toString(true)}) `
+		return blockSections.length === 1
+			? [forCond + blockSections[0]]
+			: [
+				forCond + '{',
+				new IndentedLines(blockSections),
+				'}'
+			]
+	}
+}
 export interface Case {
 	exp: Expression | null //null for default
 	block: Block
 }
-export class SwitchStatement extends Statement {
+export class SwitchStatement extends LabeledStatement {
 	constructor(
 		public readonly val: Expression,
 		public readonly cases: Case[],
-		public readonly label: LoopReference
-	) { super() }
+		label: LoopReference
+	) { super(label) }
 	walkExpressions(handler: ExpressionHandler) {
 		this.val.walk(handler)
 		for (const {exp, block} of this.cases) {
@@ -643,7 +683,7 @@ export class SwitchStatement extends Statement {
 				new IndentedLines(blockToSections(block, this.label))
 			)
 		}
-		const labelString = isLabelNeeded(this) ? this.label.label + ': ' : ''
+		const labelString: string = isLabelNeeded(this) ? this.label.label + ': ' : ''
 		return [
 			`${labelString}switch (${this.val.toString(true)}) {`,
 			new IndentedLines(innerSections),
@@ -748,12 +788,12 @@ export const sectionsToString = (sections: Section[]) =>
 	)).join('\n')
 export const blockToString = (block: Block) =>
 	sectionsToString(blockToSections(block))
-function isLabelNeeded(loopOrSwitch: WhileStatement | SwitchStatement) {
+function isLabelNeeded(loopOrSwitch: LabeledStatement) {
 	const {label} = loopOrSwitch
 	let labelNeeded = false
 	loopOrSwitch.walkBlocks(block => { //look for break/continue referencing this loop inside a different loop
 		for (const statement of block) {
-			if (statement instanceof WhileStatement || statement instanceof SwitchStatement) {
+			if (statement instanceof LabeledStatement) {
 				statement.walkBlocks(block => {
 					for (const statement of block) {
 						if (statement instanceof BreakStatement || statement instanceof ContinueStatement) {
