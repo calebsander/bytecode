@@ -4,8 +4,6 @@ Handle || with multiple clauses
 
 Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
 
-Support try-catch
-
 CleanupStrategy that identifies for-in loops
 
 Identify object types based on function calls

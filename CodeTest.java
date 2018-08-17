@@ -1,3 +1,4 @@
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,12 +18,6 @@ public class CodeTest {
 	}
 	public int add(int i1, int i2) {
 		return i1 + i2;
-	}
-	public void tryCatch() {
-		try {
-			throw new RuntimeException();
-		}
-		catch (RuntimeException e) {}
 	}
 	public static void copyInts(int a, int b, int c, int d, int e) {
 		a = b;
@@ -302,5 +297,50 @@ public class CodeTest {
 	public int intTernary() {
 		boolean b = Math.random() > 0.5;
 		return b ? 1 : 0;
+	}
+	public int tryCatch() {
+		int a = 0;
+		try {
+			a = 1;
+			if (Math.random() > 0.5) throw new RuntimeException("abc");
+			if (Math.random() > 0.5) throw new IOException("def");
+			a = 2;
+		}
+		catch (RuntimeException e) {
+			a = 3;
+		}
+		catch (IOException e) {
+			a = 4;
+		}
+		a = 5;
+		return a;
+	}
+	public int tryFinally() {
+		int a = 0;
+		try {
+			a = 1;
+			if (a == 2) throw new RuntimeException();
+		}
+		finally {
+			a = 2;
+		}
+		a = 3;
+		return a;
+	}
+	public int tryCatchFinally() {
+		int a = 0;
+		try {
+			a = 1;
+			if (Math.random() > 0.5) throw new RuntimeException("ghi");
+			else throw new IOException("jkl");
+		}
+		catch (RuntimeException | IOException e) {
+			a = 2;
+		}
+		finally {
+			a = 3;
+		}
+		a = 4;
+		return a;
 	}
 }

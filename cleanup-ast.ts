@@ -29,6 +29,8 @@ import {
 	StringLiteral,
 	SwitchStatement,
 	Ternary,
+	ThrowStatement,
+	TryStatement,
 	UnaryOperation,
 	Variable,
 	WhileStatement
@@ -69,10 +71,7 @@ const removeTrailingReturn: CleanupStrategy = block => {
 	if (lastStatement instanceof ReturnStatement && !lastStatement.exp) {
 		replacements.set(lastStatement, [])
 	}
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const avoidEmptyIfBlock: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
@@ -85,10 +84,7 @@ const avoidEmptyIfBlock: CleanupStrategy = block => {
 			)])
 		}
 	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const avoidNegation: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
@@ -106,10 +102,7 @@ const avoidNegation: CleanupStrategy = block => {
 			if (replacement) replacements.set(expression, replacement)
 		}
 	})
-	return {
-		expressions: replacements,
-		statements: new Map
-	}
+	return {expressions: replacements, statements: new Map}
 }
 const resolveBooleanTernary: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
@@ -120,10 +113,7 @@ const resolveBooleanTernary: CleanupStrategy = block => {
 			else if (isFalse(ifTrue) && isTrue(ifFalse)) replacements.set(expression, new UnaryOperation('!', cond))
 		}
 	})
-	return {
-		expressions: replacements,
-		statements: new Map
-	}
+	return {expressions: replacements, statements: new Map}
 }
 const avoidSubtractionCmp: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
@@ -142,10 +132,7 @@ const avoidSubtractionCmp: CleanupStrategy = block => {
 			}
 		}
 	})
-	return {
-		expressions: replacements,
-		statements: new Map
-	}
+	return {expressions: replacements, statements: new Map}
 }
 const avoidDoubleCast: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
@@ -157,10 +144,7 @@ const avoidDoubleCast: CleanupStrategy = block => {
 			}
 		}
 	})
-	return {
-		expressions: replacements,
-		statements: new Map
-	}
+	return {expressions: replacements, statements: new Map}
 }
 const identifyDoWhileCondition: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
@@ -193,10 +177,7 @@ const identifyDoWhileCondition: CleanupStrategy = block => {
 			}
 		}
 	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const trueDoWhileToWhile: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
@@ -213,10 +194,7 @@ const trueDoWhileToWhile: CleanupStrategy = block => {
 			}
 		}
 	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const identifyWhileCondition: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
@@ -240,10 +218,7 @@ const identifyWhileCondition: CleanupStrategy = block => {
 			}
 		}
 	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const resolveTrueIfCondition: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
@@ -253,10 +228,7 @@ const resolveTrueIfCondition: CleanupStrategy = block => {
 			if (isTrue(cond) && !elseBlock.length) replacements.set(statement, ifBlock)
 		}
 	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const collapseCasesWithDefault: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
@@ -276,10 +248,7 @@ const collapseCasesWithDefault: CleanupStrategy = block => {
 			}
 		}
 	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const identifyStringSwitch: CleanupStrategy = block => {
 	const replacements = new Map<Statement, Statement[]>()
@@ -343,10 +312,7 @@ const identifyStringSwitch: CleanupStrategy = block => {
 				)])
 		}
 	})
-	return {
-		expressions: new Map,
-		statements: replacements
-	}
+	return {expressions: new Map, statements: replacements}
 }
 const shorthandAssignments: CleanupStrategy = block => {
 	const replacements = new Map<Expression, Expression>()
@@ -374,10 +340,48 @@ const shorthandAssignments: CleanupStrategy = block => {
 			}
 		}
 	})
-	return {
-		expressions: replacements,
-		statements: new Map
-	}
+	return {expressions: replacements, statements: new Map}
+}
+const combineCatchFinally: CleanupStrategy = block => {
+	const replacements = new Map<Statement, Statement[]>()
+	walkBlockStatements(block, statement => {
+		if (statement instanceof TryStatement) {
+			const {tryBlock, catches} = statement
+			if (tryBlock.length === 1 && catches.length === 1) {
+				const [finallyBlock] = catches
+				const [innerTry] = tryBlock
+				if (!finallyBlock.types.length && innerTry instanceof TryStatement) {
+					const {tryBlock, catches} = innerTry
+					if (!catches.some(({types}) => !types.length)) { //no finally block
+						replacements.set(statement, [new TryStatement(
+							tryBlock,
+							[...catches, finallyBlock]
+						)])
+					}
+				}
+			}
+		}
+	})
+	return {expressions: new Map, statements: replacements}
+}
+const removeFinallyThrow: CleanupStrategy = block => {
+	const replacements = new Map<Statement, Statement[]>()
+	walkBlockStatements(block, statement => {
+		if (statement instanceof TryStatement) {
+			for (const {types, variable, block} of statement.catches) {
+				if (!types.length) {
+					const [lastStatement] = block.slice(-1)
+					if (lastStatement instanceof ThrowStatement) {
+						const {err} = lastStatement
+						if (err instanceof Variable && err.n === variable.n) {
+							replacements.set(lastStatement, [])
+						}
+					}
+				}
+			}
+		}
+	})
+	return {expressions: new Map, statements: replacements}
 }
 const STRATEGIES = [
 	removeTrailingReturn,
@@ -392,7 +396,9 @@ const STRATEGIES = [
 	resolveTrueIfCondition,
 	collapseCasesWithDefault,
 	identifyStringSwitch,
-	shorthandAssignments
+	shorthandAssignments,
+	removeFinallyThrow,
+	combineCatchFinally
 ]
 
 function walkBooleanContextExpressions(block: Block, notBooleanVars: Set<number>, returnBoolean: boolean, handler: ExpressionHandler) {
@@ -530,10 +536,7 @@ export function cleanup(block: Block, argTypes: Map<number, string>, localTypes:
 					}
 				}
 			})
-			return {
-				expressions: replacements,
-				statements: new Map
-			}
+			return {expressions: replacements, statements: new Map}
 		}
 	]
 	let someReplaced: boolean
@@ -549,6 +552,7 @@ export function cleanup(block: Block, argTypes: Map<number, string>, localTypes:
 	} while (someReplaced)
 	return block
 }
+//Replaces, e.g. java/util/ArrayList with ArrayList and adds java.util.ArrayList to imports
 export function convertClassString(clazz: string, imports: Set<string>) {
 	if (!clazz.includes('/')) return clazz
 
@@ -560,7 +564,6 @@ export function convertClassString(clazz: string, imports: Set<string>) {
 	const [clazzName] = packages.slice(-1)
 	return clazzName
 }
-//Replaces, e.g. java/util/ArrayList with ArrayList
 export function resolvePackageClasses(block: Block, imports: Set<string>): Block {
 	const replacements = new Map<Expression, Expression>()
 	walkBlockExpressions(block, expression => {
@@ -580,20 +583,26 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 				expression.args
 			))
 		}
-		else if (expression instanceof NewArray && !expression.primitive) {
-			replacements.set(expression, new NewArray(
-				{name: convertClassString(expression.type.name, imports)},
-				expression.dimensions,
-				expression.primitive,
-				expression.elements
-			))
+		else if (expression instanceof NewArray) {
+			const {type, dimensions, primitive, elements} = expression
+			if (!primitive) {
+				replacements.set(expression, new NewArray(
+					{name: convertClassString(type.name, imports)},
+					dimensions,
+					primitive,
+					elements
+				))
+			}
 		}
-		else if (expression instanceof Cast && !expression.primitive) {
-			replacements.set(expression, new Cast(
-				{name: convertClassString(expression.type.name, imports)},
-				expression.exp,
-				expression.primitive
-			))
+		else if (expression instanceof Cast) {
+			const {type, exp, primitive} = expression
+			if (!primitive) {
+				replacements.set(expression, new Cast(
+					{name: convertClassString(type.name, imports)},
+					exp,
+					primitive
+				))
+			}
 		}
 	})
 	return replaceBlock(block, {expressions: replacements, statements: new Map})
@@ -603,6 +612,11 @@ export function getUsedVariables(block: Block) {
 	const variables = new Set<number>()
 	walkBlockExpressions(block, expression => {
 		if (expression instanceof Variable) variables.add(expression.n)
+	})
+	walkBlockStatements(block, statement => {
+		if (statement instanceof TryStatement) {
+			for (const {variable: {n}} of statement.catches) variables.delete(n)
+		}
 	})
 	return variables
 }

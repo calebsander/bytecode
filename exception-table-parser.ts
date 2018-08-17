@@ -1,21 +1,22 @@
-import {Parser, parseAndThen, parseRepeated, parseReturn, parseStruct, parseShort} from './parse'
-import ConstantPoolIndex from './constant-pool-index'
-import {Class} from './constant-pool-parser'
+import {parseAndThen, parseRepeated, parseReturn, parseStruct, parseShort} from './parse'
+import {Class, ConstantPool} from './constant-pool-parser'
 
 export interface ExceptionTableEntry {
 	startPC: number
 	endPC: number
 	handlerPC: number
-	catchType: ConstantPoolIndex<Class> | null
+	catchType: Class | null
 }
-export const exceptionTableParser: Parser<ExceptionTableEntry[]> =
+export type ExceptionTable = ExceptionTableEntry[]
+export const exceptionTableParser = (constantPool: ConstantPool) =>
 	parseRepeated(parseStruct<ExceptionTableEntry>([
 		['startPC', parseShort],
 		['endPC', parseShort],
 		['handlerPC', parseShort],
 		['catchType', parseAndThen(parseShort, index =>
-			parseReturn(
-				index ? new ConstantPoolIndex(index) : null
+			parseReturn(index
+				? constantPool.getConstant(index) as Class
+				: null
 			)
 		)]
 	]))

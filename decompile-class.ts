@@ -6,6 +6,7 @@ import {cleanup, convertClassString, getUsedVariables, resolvePackageClasses} fr
 import {CodeAttribute} from './code-parser'
 import {parseMethodAST} from './control-flow'
 import {doubleWidthType, getArgTypes, getType} from './descriptor'
+import {ExceptionTable} from './exception-table-parser'
 import {LoadConstant, Stack} from './instructions'
 import {processAttribute} from './process-attribute'
 import {varName, getLocalTypes} from './variable-types'
@@ -62,7 +63,8 @@ function classToSections(clazz: ClassFile): Section[] {
 	const methodsSections: Section[] = []
 	for (const method of methods) {
 		const {accessFlags, attributes, name, descriptor} = method
-		let instructions: Code | undefined
+		let instructions: Code | undefined,
+		    exceptionTable: ExceptionTable | undefined
 		for (const attribute of attributes) {
 			const parsedAttribute = processAttribute({
 				attribute,
@@ -71,9 +73,12 @@ function classToSections(clazz: ClassFile): Section[] {
 				method
 			})
 			if (parsedAttribute.type === CODE) {
-				({instructions} = parsedAttribute.value as CodeAttribute)
+				({instructions, exceptionTable} = parsedAttribute.value as CodeAttribute)
 				console.log(name.getValue(constantPool))
 				if (instructions.size < 100) console.log(inspect(instructions, false, Infinity, true))
+				for (const {startPC, endPC, handlerPC, catchType} of exceptionTable) {
+					console.log(`${startPC} - ${endPC} -> ${handlerPC}`, catchType)
+				}
 				console.log()
 				break
 			}
@@ -92,7 +97,10 @@ function classToSections(clazz: ClassFile): Section[] {
 		let methodSections: Section[]
 		if (instructions) {
 			const localTypes = getLocalTypes(instructions, paramLocalIndex)
-			const block = cleanup(parseMethodAST(instructions), argTypes, localTypes, returnType)
+			const block = cleanup(
+				parseMethodAST(instructions, exceptionTable!),
+				argTypes, localTypes, returnType
+			)
 			const importResolvedBlock = resolvePackageClasses(block, imports)
 			methodSections = blockToSections(importResolvedBlock)
 			const usedVariables = getUsedVariables(block)
@@ -111,7 +119,7 @@ function classToSections(clazz: ClassFile): Section[] {
 						nameString
 				) +
 				`(${params.join(', ')})`
-		if (accessFlags.abstract) methodsSections.push(signature + ';')
+		if (accessFlags.abstract || accessFlags.native) methodsSections.push(signature + ';')
 		else {
 			methodsSections.push(
 				signature + ' {',

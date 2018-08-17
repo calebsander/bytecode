@@ -4,6 +4,7 @@ import {
 	BooleanLiteral,
 	BreakStatement,
 	Case,
+	Catch,
 	ContinueStatement,
 	Expression,
 	IfStatement,
@@ -13,11 +14,17 @@ import {
 	UnaryOperation,
 	WhileStatement,
 	SwitchStatement,
-	SynchronizedStatement
+	SynchronizedStatement,
+	TryStatement,
+	Variable,
+	ClassReference
 } from './ast'
 import {Code} from './bytecode-parser'
+import {Class} from './constant-pool-parser'
+import {ExceptionTable, ExceptionTableEntry} from './exception-table-parser'
 import {
 	forcePop,
+	AStore,
 	Goto,
 	IfCondition,
 	Jump,
@@ -31,6 +38,10 @@ interface LoopCounter {
 	count: number
 }
 type Loops = Map<number, LoopReference>
+interface CatchType {
+	pc: number //first instruction of the catch block
+	clazz: Class | null //exception catch to match, or null for any
+}
 
 class IfExceedsBoundsError extends Error {
 	constructor(
@@ -46,6 +57,7 @@ const getCaseExpression = (value: number | null) =>
 
 function parseControlFlow(
 	instructions: Code,
+	exceptionTable: ExceptionTable,
 	start: number, //inclusive
 	end: number, //exclusive
 	loopCounter: LoopCounter,
@@ -108,11 +120,34 @@ function parseControlFlow(
 		}
 		index = nextIndex
 	}
+	let firstTryStart = Infinity, //index of the first instruction of the try block
+	    firstTryEnd: number, //index of the instruction after the try block
+	    firstTryCatches: CatchType[]
+	for (const {startPC, endPC, handlerPC, catchType} of exceptionTable) {
+		if (startPC < start || endPC > end) continue
+		let addCatchType = false
+		if (startPC < firstTryStart) {
+			firstTryStart = startPC
+			firstTryEnd = endPC
+			firstTryCatches = []
+			addCatchType = true
+		}
+		else if (startPC === firstTryStart) {
+			if (endPC > firstTryEnd!) {
+				firstTryEnd = endPC
+				firstTryCatches = []
+				addCatchType = true
+			}
+			else if (endPC === firstTryEnd) addCatchType = true
+		}
+		if (addCatchType) firstTryCatches!.push({pc: handlerPC, clazz: catchType})
+	}
 	const firstControl = Math.min(
 		firstJumpForward,
 		firstJumpBack,
 		firstSwitch,
 		firstMonitor,
+		firstTryStart,
 		end
 	)
 	for (let index = start; index < firstControl;) {
@@ -154,7 +189,7 @@ function parseControlFlow(
 		if (hasElseBlock) {
 			elseBlockEnd = lastIndexOfIf + (lastInstructionOfIf as Goto).offset
 			parseControlFlow(
-				instructions,
+				instructions, exceptionTable,
 				firstJumpForwardTarget, elseBlockEnd,
 				loopCounter, breaks, continues,
 				elseStack, elseBlock
@@ -169,7 +204,7 @@ function parseControlFlow(
 				const clauseBlock: Block = []
 				try {
 					parseControlFlow(
-						instructions,
+						instructions, exceptionTable,
 						clauseStart, ifBlockEnd,
 						loopCounter, breaks, continues,
 						clauseStack, clauseBlock
@@ -199,7 +234,7 @@ function parseControlFlow(
 			const ifBlock: Block = []
 			try {
 				parseControlFlow(
-					instructions,
+					instructions, exceptionTable,
 					firstJumpForward, ifBlockEnd,
 					loopCounter, breaks, continues,
 					ifStack, ifBlock
@@ -218,7 +253,7 @@ function parseControlFlow(
 						if (gotoEnd instanceof Goto) {
 							const trueStack: Stack = []
 							const trueBlock = parseControlFlow(
-								instructions,
+								instructions, exceptionTable,
 								ifBlockEnd, gotoEndIndex,
 								loopCounter, breaks, continues,
 								trueStack
@@ -227,7 +262,7 @@ function parseControlFlow(
 								const endIndex = gotoEndIndex + gotoEnd.offset
 								const falseStack: Stack = []
 								const falseBlock = parseControlFlow(
-									instructions,
+									instructions, exceptionTable,
 									falseIndex, endIndex,
 									loopCounter, breaks, continues,
 									falseStack
@@ -250,7 +285,7 @@ function parseControlFlow(
 		}
 		const newStart = elseBlockEnd || ifBlockEnd
 		parseControlFlow(
-			instructions,
+			instructions, exceptionTable,
 			newStart, end,
 			loopCounter, breaks, continues,
 			stack, block
@@ -264,7 +299,7 @@ function parseControlFlow(
 		continues.set(firstJumpBack, loop)
 		const whileStack: Stack = []
 		const whileBlock = parseControlFlow(
-			instructions,
+			instructions, exceptionTable,
 			firstJumpBack, loopEnd,
 			loopCounter, breaks, continues,
 			whileStack
@@ -279,7 +314,7 @@ function parseControlFlow(
 			loop
 		))
 		parseControlFlow(
-			instructions,
+			instructions, exceptionTable,
 			loopEnd, end,
 			loopCounter, breaks, continues,
 			stack, block
@@ -295,10 +330,7 @@ function parseControlFlow(
 			const caseStart = firstSwitch + offset
 			caseStartSet.add(caseStart)
 			let caseValues = inverseJumpMap.get(caseStart)
-			if (!caseValues) {
-				caseValues = []
-				inverseJumpMap.set(caseStart, caseValues)
-			}
+			if (!caseValues) inverseJumpMap.set(caseStart, caseValues = [])
 			caseValues.push(value)
 		}
 		const caseStarts = [...caseStartSet].sort((a, b) => a - b)
@@ -316,7 +348,7 @@ function parseControlFlow(
 				try {
 					const caseStack: Stack = []
 					const caseBlock = parseControlFlow(
-						instructions,
+						instructions, exceptionTable,
 						caseStart, caseEnd,
 						loopCounter, breaks, continues,
 						caseStack
@@ -359,7 +391,7 @@ function parseControlFlow(
 		if (breakIndex !== undefined) {
 			breaks.delete(breakIndex)
 			parseControlFlow(
-				instructions,
+				instructions, exceptionTable,
 				breakIndex, end,
 				loopCounter, breaks, continues,
 				stack, block
@@ -369,11 +401,20 @@ function parseControlFlow(
 	else if (firstControl === firstMonitor) {
 		const obj = forcePop(stack)
 		const synchronizedStart = firstMonitor + instructions.get(firstMonitor)!.length
+		let retryCatch: ExceptionTableEntry | undefined
+		const synchronizedCatch = exceptionTable.find(({startPC, handlerPC}) =>
+			startPC === synchronizedStart && !!(retryCatch = exceptionTable.find(catcher =>
+				catcher.startPC === handlerPC && catcher.handlerPC === handlerPC
+			))
+		)
+		const revisedExceptionTable = exceptionTable.filter(catcher =>
+			!(catcher === synchronizedCatch || catcher === retryCatch)
+		)
 		const synchronizedStack: Stack = []
 		const synchronizedBlock: Block = []
 		try {
 			parseControlFlow(
-				instructions,
+				instructions, revisedExceptionTable,
 				synchronizedStart, end,
 				loopCounter, breaks, continues,
 				synchronizedStack, synchronizedBlock
@@ -392,22 +433,139 @@ function parseControlFlow(
 			}
 			if (!instructionAfterCatch) throw new Error('Expected Goto after synchronized body')
 			parseControlFlow(
-				instructions,
+				instructions, exceptionTable,
 				instructionAfterCatch, end,
 				loopCounter, breaks, continues,
 				stack, block
 			)
 		}
 	}
+	else if (firstControl === firstTryStart) {
+		const revisedExceptionTable = exceptionTable.filter(({startPC, endPC}) =>
+			!(startPC === firstTryStart && endPC === firstTryEnd)
+		)
+		const tryStack: Stack = []
+		const tryBlock = parseControlFlow(
+			instructions, revisedExceptionTable,
+			firstTryStart, firstTryEnd,
+			loopCounter, breaks, continues,
+			tryStack
+		)
+		if (tryStack.length) throw new Error('Expected empty stack')
+		function resolveExceptionStore(pc: number) {
+			const {instruction, length} = instructions.get(pc)!
+			if (!(instruction instanceof AStore)) throw new Error('Expected catch block to start with AStore')
+			return {
+				pc: pc + length,
+				variable: new Variable(instruction.n)
+			}
+		}
+		const finallyCatch = firstTryCatches!.find(({clazz}) => !clazz)
+		let tryStatementEnd: number | undefined
+		if (finallyCatch) { //a finally clause
+			const catchPC = finallyCatch.pc
+			tryStatementEnd = end
+			const beforeCatchIndex = preceding.get(catchPC)!
+			if (beforeCatchIndex >= firstTryEnd) {
+				const beforeCatch = instructions.get(beforeCatchIndex)!.instruction
+				if (beforeCatch instanceof Goto) tryStatementEnd = beforeCatchIndex + beforeCatch.offset
+			}
+			const {pc, variable} = resolveExceptionStore(catchPC)
+			const finallyStack: Stack = []
+			const finallyBlock = parseControlFlow(
+				instructions, revisedExceptionTable,
+				pc, tryStatementEnd,
+				loopCounter, breaks, continues,
+				finallyStack
+			)
+			if (finallyStack.length) throw new Error('Expected empty stack')
+			block.push(new TryStatement(
+				tryBlock,
+				[{types: [], variable, block: finallyBlock}]
+			))
+		}
+		else { //not a finally clause
+			const firstInstructionAfterTry = instructions.get(firstTryEnd)
+			if (firstInstructionAfterTry) {
+				const {instruction} = firstInstructionAfterTry
+				if (instruction instanceof Goto) tryStatementEnd = firstTryEnd + instruction.offset
+			}
+			const handlerPCTypes = new Map<number, Class[]>()
+			for (const {pc, clazz} of firstTryCatches) {
+				let pcTypes = handlerPCTypes.get(pc)
+				if (!pcTypes) handlerPCTypes.set(pc, pcTypes = [])
+				pcTypes.push(clazz!)
+			}
+			const catches: Catch[] = []
+			for (const [handlerPC, types] of handlerPCTypes) {
+				const {pc, variable} = resolveExceptionStore(handlerPC)
+				function parseCatch(): Block {
+					let catchEnd: number
+					if (tryStatementEnd === undefined) catchEnd = end
+					else {
+						catchEnd = tryStatementEnd
+						for (let index = pc; index < catchEnd;) {
+							const instructionLength = instructions.get(index)
+							if (!instructionLength) throw new Error(`Missing instruction at ${index}`)
+							const {instruction, length} = instructionLength
+							if (instruction instanceof Goto) {
+								const target = index + instruction.offset
+								if (target === tryStatementEnd) catchEnd = index
+							}
+							index += length
+						}
+					}
+					try {
+						const catchStack: Stack = []
+						const catchBlock = parseControlFlow(
+							instructions, exceptionTable,
+							pc, catchEnd,
+							loopCounter, breaks, continues,
+							catchStack
+						)
+						if (catchStack.length) throw new Error('Expected empty stack')
+						return catchBlock
+					}
+					catch (e) {
+						if (tryStatementEnd === undefined && e instanceof IfExceedsBoundsError) {
+							const jumpIndex = preceding.get(e.instructionAfterIf)!
+							const jump = instructions.get(jumpIndex)!.instruction
+							if (jump instanceof Goto) {
+								tryStatementEnd = jumpIndex + jump.offset
+								if (tryStatementEnd <= pc || tryStatementEnd > end) throw new Error('End of catches exceeds block')
+								return parseCatch() //try again with tryStatementEnd defined
+							}
+						}
+						throw e
+					}
+				}
+				catches.push({
+					types: types.map(clazz => new ClassReference(clazz)),
+					variable,
+					block: parseCatch()
+				})
+			}
+			block.push(new TryStatement(tryBlock, catches))
+		}
+		parseControlFlow(
+			instructions, exceptionTable,
+			tryStatementEnd || end, end,
+			loopCounter, breaks, continues,
+			stack, block
+		)
+	}
 	return block
 }
-export function parseMethodAST(instructions: Code): Block {
+export function parseMethodAST(instructions: Code, exceptionTable: ExceptionTable): Block {
 	let end = 0
 	for (const [offset, {length}] of instructions) end = offset + length
-	return parseControlFlow(
-		instructions,
+	const stack: Stack = []
+	const block = parseControlFlow(
+		instructions, exceptionTable,
 		0, end,
 		{count: 1}, new Map, new Map,
-		[]
+		stack
 	)
+	if (stack.length) throw new Error('Expected empty stack')
+	return block
 }

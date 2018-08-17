@@ -679,6 +679,59 @@ export class SynchronizedStatement extends Statement {
 		]
 	}
 }
+export interface Catch {
+	types: ClassReference[] //[] for finally
+	variable: Variable
+	block: Block
+}
+export class TryStatement extends Statement {
+	constructor(
+		public readonly tryBlock: Block,
+		public readonly catches: Catch[]
+	) { super() }
+	walkExpressions(handler: ExpressionHandler) {
+		for (const statement of this.tryBlock) statement.walkExpressions(handler)
+		for (const {types, block} of this.catches) {
+			for (const type of types) type.walk(handler)
+			for (const statement of block) statement.walkExpressions(handler)
+		}
+	}
+	walkBlocks(handler: BlockHandler) {
+		handler(this.tryBlock)
+		for (const statement of this.tryBlock) statement.walkBlocks(handler)
+		for (const {block} of this.catches) {
+			handler(block)
+			for (const statement of block) statement.walkBlocks(handler)
+		}
+	}
+	replace(replacements: Replacements) {
+		const {expressions} = replacements
+		return new TryStatement(
+			replaceBlock(this.tryBlock, replacements),
+			this.catches.map(({types, variable, block}) => ({
+				types: types.map(type => expressions.get(type) as ClassReference || type),
+				variable,
+				block: replaceBlock(block, replacements)
+			}))
+		)
+	}
+	toSections(enclosingLoop?: LoopReference) {
+		return [
+			'try {',
+			new IndentedLines(blockToSections(this.tryBlock, enclosingLoop)),
+			'}',
+			...flatten(this.catches.map(({types, variable, block}) => [
+				(types.length
+					? `catch (${types.map(type => type.toString()).join(' | ')} ${variable.toString()})`
+					: 'finally'
+				) + ' {',
+				new IndentedLines(blockToSections(block, enclosingLoop)),
+				'}'
+			]))
+		]
+	}
+}
+
 export type Block = Statement[]
 export const flatten = <T>(segments: T[][]): T[] =>
 	([] as T[]).concat(...segments)

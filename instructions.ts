@@ -301,10 +301,7 @@ export class AStore extends LocalStoreInstruction {
 }
 export class AThrow extends Instruction {
 	execute(stack: Stack, block: Block) {
-		const exception = forcePop(stack)
-		stack.length = 0
-		stack[0] = exception
-		block.push(new ThrowStatement(exception))
+		block.push(new ThrowStatement(forcePop(stack)))
 	}
 }
 export class BALoad extends ArrayLoadInstruction {}
