@@ -1,6 +1,8 @@
-Test whether old-fashioned for loops work with continues
+Fix old-fashioned for loops with continues
 
-Declare local variables (use LocalVariableTable and LocalVariableTypeTable)
+Add type to for-in loop to make it valid Java
+
+CleanupStrategy to identify for (var; var BinaryOp exp; UnaryOp exp)
 
 Identify object types based on function calls
 Find how ints are being used - boolean/short/int/char by function definitions?

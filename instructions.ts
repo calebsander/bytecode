@@ -616,11 +616,9 @@ export class SwitchInstruction extends Instruction {
 //When executed, jumps push the expression under which they jump onto the stack
 export abstract class Jump extends Instruction {
 	constructor(public readonly offset: number) { super() }
-	abstract readonly offsets: Iterable<number>
 }
 export abstract class IfCondition extends Jump {
 	protected abstract readonly jumpOp: BinaryOp
-	get offsets() { return [3, this.offset] } //if* instruction is 3 bytes long
 }
 abstract class IfICmp extends IfCondition {
 	execute(stack: Stack) {
@@ -696,7 +694,6 @@ export class IfNonNull extends IfNullCmp {
 	get jumpOp(): BinaryOp { return '!=' }
 }
 export class Goto extends Jump {
-	get offsets() { return [this.offset] }
 	execute(stack: Stack) {
 		stack.push(new BooleanLiteral(true))
 	}

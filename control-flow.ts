@@ -97,28 +97,27 @@ function parseControlFlow(
 		else if (instruction instanceof MonitorEnter) firstMonitor = Math.min(firstMonitor, index)
 		// Breaks and continues don't need to be processed as separate blocks
 		else if (instruction instanceof Jump && !(getBreak(index) || getContinue(index))) {
-			for (const offset of instruction.offsets) {
-				const target = index + offset
-				if (offset < 0) {
-					if (target < firstJumpBack) {
-						firstJumpBack = target
-						firstJumpBackSource = index
-					}
-					else if (target === firstJumpBack) {
-						firstJumpBackSource = Math.max(firstJumpBackSource!, index)
-					}
+			const {offset} = instruction
+			const target = index + offset
+			if (offset < 0) {
+				if (target < firstJumpBack) {
+					firstJumpBack = target
+					firstJumpBackSource = index
 				}
-				else if (offset > 0) {
-					if (nextIndex < firstJumpForward) {
-						firstJumpForward = nextIndex
-						firstJumpForwardTarget = target
-					}
-					else if (nextIndex === firstJumpForward) {
-						firstJumpForwardTarget = Math.max(firstJumpForwardTarget!, target)
-					}
+				else if (target === firstJumpBack) {
+					firstJumpBackSource = Math.max(firstJumpBackSource!, index)
 				}
-				else throw new Error('Jump with offset 0?')
 			}
+			else if (offset > 0) {
+				if (nextIndex < firstJumpForward) {
+					firstJumpForward = nextIndex
+					firstJumpForwardTarget = target
+				}
+				else if (nextIndex === firstJumpForward) {
+					firstJumpForwardTarget = Math.max(firstJumpForwardTarget!, target)
+				}
+			}
+			else throw new Error('Jump with offset 0?')
 		}
 		index = nextIndex
 	}
