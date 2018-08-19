@@ -71,19 +71,28 @@ interface MethodContext {
 	notBooleanVars: Set<number>
 	returnBoolean: boolean
 }
-type CleanupStrategy = (context: MethodContext) => (block: Block) => Replacements
-
-const removeTrailingReturn: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	const [lastStatement] = block.slice(-1)
-	if (lastStatement instanceof ReturnStatement && !lastStatement.exp) {
-		replacements.set(lastStatement, [])
-	}
-	return {expressions: new Map, statements: replacements}
+type RootBlockReplacement = (block: Block, replacements: Replacements) => void
+type BlockReplacement = (block: Block, statements: Map<Statement, Block>, expressions: Map<Expression, Expression>) => void
+type StatementReplacement = (statement: Statement, replacements: Map<Statement, Block>) => void
+type ExpressionReplacement = (expression: Expression, replacements: Map<Expression, Expression>) => void
+interface ReplacementHandler {
+	rootBlock?: RootBlockReplacement
+	blocks?: BlockReplacement
+	statements?: StatementReplacement
+	expressions?: ExpressionReplacement
 }
-const avoidEmptyIfBlock: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+type CleanupStrategy = (context: MethodContext) => ReplacementHandler
+
+const removeTrailingReturn: CleanupStrategy = _ => ({
+	rootBlock(block, {statements}) {
+		const [lastStatement] = block.slice(-1)
+		if (lastStatement instanceof ReturnStatement && !lastStatement.exp) {
+			statements.set(lastStatement, [])
+		}
+	}
+})
+const avoidEmptyIfBlock: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof IfStatement) {
 			const {cond, ifBlock, elseBlock} = statement
 			if (!ifBlock.length) {
@@ -92,12 +101,10 @@ const avoidEmptyIfBlock: CleanupStrategy = _ => block => {
 				])
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const avoidNegation: CleanupStrategy = _ => block => {
-	const replacements = new Map<Expression, Expression>()
-	walkBlockExpressions(block, expression => {
+	}
+})
+const avoidNegation: CleanupStrategy = _ => ({
+	expressions(expression, replacements) {
 		if (expression instanceof UnaryOperation && expression.op === '!') {
 			const {arg} = expression
 			let replacement: Expression | undefined
@@ -110,23 +117,19 @@ const avoidNegation: CleanupStrategy = _ => block => {
 			}
 			if (replacement) replacements.set(expression, replacement)
 		}
-	})
-	return {expressions: replacements, statements: new Map}
-}
-const resolveBooleanTernary: CleanupStrategy = _ => block => {
-	const replacements = new Map<Expression, Expression>()
-	walkBlockExpressions(block, expression => {
+	}
+})
+const resolveBooleanTernary: CleanupStrategy = _ => ({
+	expressions(expression, replacements) {
 		if (expression instanceof Ternary) {
 			const {cond, ifTrue, ifFalse} = expression
 			if (isTrue(ifTrue) && isFalse(ifFalse)) replacements.set(expression, cond)
 			else if (isFalse(ifTrue) && isTrue(ifFalse)) replacements.set(expression, new UnaryOperation('!', cond))
 		}
-	})
-	return {expressions: replacements, statements: new Map}
-}
-const avoidSubtractionCmp: CleanupStrategy = _ => block => {
-	const replacements = new Map<Expression, Expression>()
-	walkBlockExpressions(block, expression => {
+	}
+})
+const avoidSubtractionCmp: CleanupStrategy = _ => ({
+	expressions(expression, replacements) {
 		if (expression instanceof BinaryOperation) {
 			const {op: cmpOp, arg1, arg2} = expression
 			if (NEGATED_COMPARISONS.has(cmpOp)) {
@@ -140,24 +143,20 @@ const avoidSubtractionCmp: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: replacements, statements: new Map}
-}
-const avoidDoubleCast: CleanupStrategy = _ => block => {
-	const replacements = new Map<Expression, Expression>()
-	walkBlockExpressions(block, expression => {
+	}
+})
+const avoidDoubleCast: CleanupStrategy = _ => ({
+	expressions(expression, replacements) {
 		if (expression instanceof Cast) {
 			const {type, exp, primitive} = expression
 			if (exp instanceof Cast) {
 				replacements.set(expression, new Cast(type, exp.exp, primitive))
 			}
 		}
-	})
-	return {expressions: replacements, statements: new Map}
-}
-const identifyDoWhileCondition: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+	}
+})
+const identifyDoWhileCondition: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof WhileStatement) {
 			const {doWhile, cond, block, label} = statement
 			if (doWhile && isFalse(cond)) {
@@ -185,29 +184,20 @@ const identifyDoWhileCondition: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const trueDoWhileToWhile: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+	}
+})
+const trueDoWhileToWhile: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof WhileStatement) {
 			const {cond, block, doWhile, label} = statement
 			if (doWhile && isTrue(cond)) {
-				replacements.set(statement, [new WhileStatement(
-					cond,
-					block,
-					false,
-					label
-				)])
+				replacements.set(statement, [new WhileStatement(cond, block, false, label)])
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const identifyWhileCondition: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+	}
+})
+const identifyWhileCondition: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof WhileStatement) {
 			const {doWhile, cond, block, label} = statement
 			if (!doWhile && isTrue(cond)) {
@@ -226,22 +216,18 @@ const identifyWhileCondition: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const resolveTrueIfCondition: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+	}
+})
+const resolveTrueIfCondition: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof IfStatement) {
 			const {cond, ifBlock, elseBlock} = statement
 			if (isTrue(cond) && !elseBlock.length) replacements.set(statement, ifBlock)
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const collapseCasesWithDefault: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+	}
+})
+const collapseCasesWithDefault: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof SwitchStatement) {
 			const {val, cases, label} = statement
 			const defaultIndex = cases.findIndex(({exp}) => !exp)
@@ -256,12 +242,10 @@ const collapseCasesWithDefault: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const identifyStringSwitch: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlocks(block, block => {
+	}
+})
+const identifyStringSwitch: CleanupStrategy = _ => ({
+	blocks(block, replacements) {
 		testIndex: for (let i = 0; i < block.length; i++) {
 			const [valAssignment, indexInit, hashSwitch, indexSwitch] = block.slice(i, i + 4)
 			if (!(valAssignment instanceof ExpressionStatement && valAssignment.exp instanceof Assignment &&
@@ -320,12 +304,10 @@ const identifyStringSwitch: CleanupStrategy = _ => block => {
 					indexSwitch.label
 				)])
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const shorthandAssignments: CleanupStrategy = _ => block => {
-	const replacements = new Map<Expression, Expression>()
-	walkBlockExpressions(block, expression => {
+	}
+})
+const shorthandAssignments: CleanupStrategy = _ => ({
+	expressions(expression, replacements) {
 		if (expression instanceof Assignment) {
 			const {lhs, rhs, op} = expression
 			if (!op && rhs instanceof BinaryOperation) {
@@ -348,12 +330,10 @@ const shorthandAssignments: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: replacements, statements: new Map}
-}
-const combineCatchFinally: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+	}
+})
+const combineCatchFinally: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof TryStatement) {
 			const {tryBlock, catches} = statement
 			if (tryBlock.length === 1 && catches.length === 1) {
@@ -370,12 +350,10 @@ const combineCatchFinally: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const removeFinallyThrow: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlockStatements(block, statement => {
+	}
+})
+const removeFinallyThrow: CleanupStrategy = _ => ({
+	statements(statement, replacements) {
 		if (statement instanceof TryStatement) {
 			for (const {types, variable, block} of statement.catches) {
 				if (!types.length) {
@@ -389,12 +367,10 @@ const removeFinallyThrow: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const identifyForInArray: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlocks(block, block => {
+	}
+})
+const identifyForInArray: CleanupStrategy = _ => ({
+	blocks(block, replacements) {
 		for (let i = 0; i < block.length; i++) {
 			const [getLength, initIndex, loop] = block.slice(i, i + 3)
 			if (!(getLength instanceof ExpressionStatement && initIndex instanceof ExpressionStatement &&
@@ -439,13 +415,10 @@ const identifyForInArray: CleanupStrategy = _ => block => {
 					label
 				)])
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
-const identifyForInIterable: CleanupStrategy = _ => block => {
-	const expressions = new Map<Expression, Expression>()
-	const statements = new Map<Statement, Block>()
-	walkBlocks(block, block => {
+	}
+})
+const identifyForInIterable: CleanupStrategy = _ => ({
+	blocks(block, statements, expressions) {
 		for (let i = 0; i < block.length; i++) {
 			const [getIterator, loop] = block.slice(i, i + 2)
 			if (!(getIterator instanceof ExpressionStatement && loop instanceof WhileStatement)) continue
@@ -482,12 +455,10 @@ const identifyForInIterable: CleanupStrategy = _ => block => {
 					.set(loop, [new ForInStatement(elementType!, lhs, obj, loopBlock, label)])
 			}
 		}
-	})
-	return {expressions, statements}
-}
-const removeForInTempVar: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Block>()
-	walkBlocks(block, block => {
+	}
+})
+const removeForInTempVar: CleanupStrategy = _ => ({
+	blocks(block, replacements) {
 		for (let i = 0; i < block.length; i++) {
 			const [initializer, forIn] = block.slice(i, i + 2)
 			if (initializer instanceof ExpressionStatement && forIn instanceof ForInStatement) {
@@ -505,20 +476,20 @@ const removeForInTempVar: CleanupStrategy = _ => block => {
 				}
 			}
 		}
-	})
-	return {expressions: new Map, statements: replacements}
-}
+	}
+})
 const xor = (a: boolean, b: boolean) => +a ^ +b
-const replaceBooleans: CleanupStrategy = ({notBooleanVars, returnBoolean}) => block => {
-	const replacements = new Map<Expression, Expression>()
+const replaceBooleans: CleanupStrategy = ({notBooleanVars, returnBoolean}) => ({
 	//Convert 1 and 0 to true and false, if known to be boolean
-	walkBooleanContextExpressions(block, notBooleanVars, returnBoolean, expression => {
-		if (expression instanceof IntegerLiteral) {
-			replacements.set(expression, new BooleanLiteral(!!expression.i))
-		}
-	})
+	rootBlock(block, {expressions}) {
+		walkBooleanContextExpressions(block, notBooleanVars, returnBoolean, expression => {
+			if (expression instanceof IntegerLiteral) {
+				expressions.set(expression, new BooleanLiteral(!!expression.i))
+			}
+		})
+	},
 	//Simplify ==/!= true/false
-	walkBlockExpressions(block, expression => {
+	expressions(expression, replacements) {
 		if (expression instanceof BinaryOperation) {
 			const {op, arg1, arg2} = expression
 			if ((op === '==' || op === '!=') && arg2 instanceof BooleanLiteral) {
@@ -527,9 +498,8 @@ const replaceBooleans: CleanupStrategy = ({notBooleanVars, returnBoolean}) => bl
 				)
 			}
 		}
-	})
-	return {expressions: replacements, statements: new Map}
-}
+	}
+})
 const STRATEGIES = [
 	removeTrailingReturn,
 	avoidEmptyIfBlock,
@@ -666,18 +636,34 @@ export function cleanup(block: Block, argTypes: Map<number, string>, localTypes:
 		if (!notBooleanVars.has(n)) localTypes.set(n, BOOLEAN)
 	}
 	const context = {notBooleanVars, returnBoolean}
-	const strategies = STRATEGIES.map(strategy => strategy(context))
-	let someReplaced: boolean
-	do {
-		someReplaced = false
-		for (const strategy of strategies) {
-			const replacements = strategy(block)
-			if (replacements.expressions.size || replacements.statements.size) {
-				block = replaceBlock(block, replacements)
-				someReplaced = true
+	const rootStrategies: RootBlockReplacement[] = []
+	const blockStrategies: BlockReplacement[] = []
+	const statementStrategies: StatementReplacement[] = []
+	const expressionStrategies: ExpressionReplacement[] = []
+	for (const strategy of STRATEGIES) {
+		const {rootBlock, blocks, statements, expressions} = strategy(context)
+		if (rootBlock) rootStrategies.push(rootBlock)
+		if (blocks) blockStrategies.push(blocks)
+		if (statements) statementStrategies.push(statements)
+		if (expressions) expressionStrategies.push(expressions)
+	}
+	while (true) {
+		const expressions = new Map<Expression, Expression>()
+		const statements = new Map<Statement, Block>()
+		const replacements = {expressions, statements}
+		for (const rootStrategy of rootStrategies) rootStrategy(block, replacements)
+		walkBlocks(block, block => {
+			for (const blockStrategy of blockStrategies) blockStrategy(block, statements, expressions)
+			for (const statement of block) {
+				for (const statementStrategy of statementStrategies) statementStrategy(statement, statements)
 			}
-		}
-	} while (someReplaced)
+		})
+		walkBlockExpressions(block, expression => {
+			for (const expressionStrategy of expressionStrategies) expressionStrategy(expression, expressions)
+		})
+		if (!(expressions.size || statements.size)) break
+		block = replaceBlock(block, replacements)
+	}
 	return block
 }
 //Replaces, e.g. java/util/ArrayList with ArrayList and adds java.util.ArrayList to imports
@@ -758,6 +744,7 @@ export function getUsedVariables(block: Block) {
 		if (statement instanceof TryStatement) {
 			for (const {variable: {n}} of statement.catches) variables.delete(n)
 		}
+		else if (statement instanceof ForInStatement) variables.delete(statement.variable.n)
 	})
 	return variables
 }
