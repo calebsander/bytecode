@@ -68,13 +68,13 @@ function parseControlFlow(
 	stack: Stack,
 	block: Block = []
 ): Block {
-	const getBreak = (index: number) => {
+	function getBreak(index: number) {
 		const {instruction} = instructions.get(index)!
 		return instruction instanceof Jump
 			? breaks.get(index + instruction.offset)
 			: undefined
 	}
-	const getContinue = (index: number) => {
+	function getContinue(index: number) {
 		const {instruction} = instructions.get(index)!
 		return instruction instanceof Jump
 			? continues.get(index + instruction.offset)
@@ -175,24 +175,30 @@ function parseControlFlow(
 		}
 		index += length
 	}
+	let controlResume: number | undefined
 	if (firstControl === firstJumpForward) {
 		if (firstJumpForwardTarget! > end) throw new IfExceedsBoundsError(firstJumpForward, firstJumpForwardTarget)
 		const elseCondition = forcePop(stack)
 		const lastIndexOfIf = preceding.get(firstJumpForwardTarget)!
 		const lastInstructionOfIf = instructions.get(lastIndexOfIf)!.instruction
-		const hasElseBlock = lastInstructionOfIf instanceof Goto &&
-			!(getBreak(lastIndexOfIf) || getContinue(lastIndexOfIf))
-		const ifBlockEnd = hasElseBlock ? lastIndexOfIf : firstJumpForwardTarget
-		let elseBlockEnd: number | undefined, elseBlock: Block = [], elseStack: Stack = []
-		if (hasElseBlock) {
-			elseBlockEnd = lastIndexOfIf + (lastInstructionOfIf as Goto).offset
-			parseControlFlow(
-				instructions, exceptionTable,
-				firstJumpForwardTarget, elseBlockEnd,
-				loopCounter, breaks, continues,
-				elseStack, elseBlock
-			)
+		let hasElseBlock = false
+		let ifBlockEnd: number
+		let elseBlock: Block = [], elseStack: Stack = []
+		if (lastInstructionOfIf instanceof Goto) {
+			const elseBlockEnd = lastIndexOfIf + lastInstructionOfIf.offset
+			if (elseBlockEnd >= firstJumpForwardTarget && !(getBreak(lastIndexOfIf) || getContinue(lastIndexOfIf))) {
+				hasElseBlock = true
+				controlResume = elseBlockEnd
+				ifBlockEnd = lastIndexOfIf
+				parseControlFlow(
+					instructions, exceptionTable,
+					firstJumpForwardTarget, elseBlockEnd,
+					loopCounter, breaks, continues,
+					elseStack, elseBlock
+				)
+			}
 		}
+		if (!hasElseBlock) controlResume = ifBlockEnd = firstJumpForwardTarget
 		if (!elseBlock.length && elseStack.length === 1) { //&& or ternary
 			const elseConditions = [elseCondition] //contains expressions causing jumps to else block
 			let ifResult: Expression | undefined
@@ -203,7 +209,7 @@ function parseControlFlow(
 				try {
 					parseControlFlow(
 						instructions, exceptionTable,
-						clauseStart, ifBlockEnd,
+						clauseStart, ifBlockEnd!,
 						loopCounter, breaks, continues,
 						clauseStack, clauseBlock
 					)
@@ -228,23 +234,24 @@ function parseControlFlow(
 			))
 		}
 		else { //|| or if block
+			if (elseStack.length) throw new Error('Expected empty stack')
 			let isOr = false
 			if (!hasElseBlock) {
-				const elseJumpIndex = preceding.get(ifBlockEnd)!
+				const elseJumpIndex = preceding.get(ifBlockEnd!)!
 				const elseJump = instructions.get(elseJumpIndex)!.instruction
 				if (elseJump instanceof Jump) {
 					const elseTarget = elseJumpIndex + elseJump.offset
-					if (elseTarget > ifBlockEnd && !(breaks.has(elseTarget) || continues.has(elseTarget))) {
+					if (elseTarget > ifBlockEnd!&& !(breaks.has(elseTarget) || continues.has(elseTarget))) {
 						isOr = true
 						const gotoEndIndex = preceding.get(elseTarget)!
 						const gotoEnd = instructions.get(gotoEndIndex)!.instruction
 						if (!(gotoEnd instanceof Goto)) throw new Error('Expected Goto in || ternary')
-						elseBlockEnd = gotoEndIndex + gotoEnd.offset
+						controlResume = gotoEndIndex + gotoEnd.offset
 						//Recurse - if we are parsing, e.g. A || B ? 1 : 0, this will result in B ? 1 : 0
 						const ternaryStack: Stack = []
 						const ternaryBlock = parseControlFlow(
 							instructions, exceptionTable,
-							firstJumpForward, elseBlockEnd,
+							firstJumpForward, controlResume,
 							loopCounter, breaks, continues,
 							ternaryStack
 						)
@@ -265,7 +272,7 @@ function parseControlFlow(
 				const ifStack: Stack = []
 				const ifBlock = parseControlFlow(
 					instructions, exceptionTable,
-					firstJumpForward, ifBlockEnd,
+					firstJumpForward, ifBlockEnd!,
 					loopCounter, breaks, continues,
 					ifStack
 				)
@@ -273,28 +280,22 @@ function parseControlFlow(
 				block.push(new IfStatement(new UnaryOperation('!', elseCondition), ifBlock, elseBlock))
 			}
 		}
-		parseControlFlow(
-			instructions, exceptionTable,
-			elseBlockEnd || ifBlockEnd, end,
-			loopCounter, breaks, continues,
-			stack, block
-		)
 	}
 	else if (firstControl === firstJumpBack) {
 		if (firstJumpBackSource! > end) throw new Error('While loop exceeds block')
-		const loopEnd = firstJumpBackSource + instructions.get(firstJumpBackSource)!.length
+		controlResume = firstJumpBackSource + instructions.get(firstJumpBackSource)!.length
 		const loop = {label: `loop${loopCounter.count++}`}
-		breaks.set(loopEnd, loop)
+		breaks.set(controlResume, loop)
 		continues.set(firstJumpBack, loop)
 		const whileStack: Stack = []
 		const whileBlock = parseControlFlow(
 			instructions, exceptionTable,
-			firstJumpBack, loopEnd,
+			firstJumpBack, controlResume,
 			loopCounter, breaks, continues,
 			whileStack
 		)
 		if (whileStack.length) throw new Error('Expected empty while stack')
-		breaks.delete(loopEnd)
+		breaks.delete(controlResume)
 		continues.delete(firstJumpBack)
 		block.push(new WhileStatement(
 			new BooleanLiteral(false),
@@ -302,12 +303,6 @@ function parseControlFlow(
 			true,
 			loop
 		))
-		parseControlFlow(
-			instructions, exceptionTable,
-			loopEnd, end,
-			loopCounter, breaks, continues,
-			stack, block
-		)
 	}
 	else if (firstControl === firstSwitch) {
 		const {offsetMap, defaultOffset} = instructions.get(firstSwitch)!.instruction as SwitchInstruction
@@ -323,14 +318,13 @@ function parseControlFlow(
 		const caseStarts = [...inverseJumpMap.keys()].sort((a, b) => a - b)
 		if (Math.max(...caseStarts) > end) throw new Error('Switch statement exceeds block')
 		const switchLabel = {label: `switch${loopCounter.count++}`}
-		let breakIndex: number | undefined //guaranteed to be nonzero if defined
 		const cases: Case[] = []
 		for (let caseIndex = 0; caseIndex < caseStarts.length; caseIndex++) {
 			const caseStart = caseStarts[caseIndex]
 			function parseCase(): Block {
 				const caseEnd = caseIndex + 1 < caseStarts.length
 					? caseStarts[caseIndex + 1]
-					: breakIndex || end
+					: controlResume === undefined ? end : controlResume
 				try {
 					const caseStack: Stack = []
 					const caseBlock = parseControlFlow(
@@ -343,13 +337,13 @@ function parseControlFlow(
 					return caseBlock
 				}
 				catch (e) {
-					if (!breakIndex && e instanceof IfExceedsBoundsError) {
+					if (controlResume === undefined && e instanceof IfExceedsBoundsError) {
 						const jumpIndex = preceding.get(e.instructionAfterIf)!
 						const jump = instructions.get(jumpIndex)!.instruction
 						if (jump instanceof Jump) {
-							breakIndex = jumpIndex + jump.offset
-							if (breakIndex <= firstSwitch || breakIndex > end) throw new Error('Break exceeds block')
-							breaks.set(breakIndex, switchLabel)
+							controlResume = jumpIndex + jump.offset
+							if (controlResume <= firstSwitch || controlResume > end) throw new Error('Break exceeds block')
+							breaks.set(controlResume, switchLabel)
 							return parseCase() //try again with the break defined
 						}
 					}
@@ -370,15 +364,7 @@ function parseControlFlow(
 			})
 		}
 		block.push(new SwitchStatement(forcePop(stack), cases, switchLabel))
-		if (breakIndex) {
-			breaks.delete(breakIndex)
-			parseControlFlow(
-				instructions, exceptionTable,
-				breakIndex, end,
-				loopCounter, breaks, continues,
-				stack, block
-			)
-		}
+		if (controlResume !== undefined) breaks.delete(controlResume)
 	}
 	else if (firstControl === firstMonitor) {
 		const obj = forcePop(stack)
@@ -407,20 +393,13 @@ function parseControlFlow(
 			if (!(e instanceof MonitorExitError)) throw e
 			block.push(new SynchronizedStatement(obj, synchronizedBlock))
 			const instructionLength = instructions.get(e.nextInstruction)
-			let instructionAfterCatch: number | undefined
 			if (instructionLength) {
 				const {instruction} = instructionLength
 				if (instruction instanceof Goto) {
-					instructionAfterCatch = e.nextInstruction + instruction.offset
+					controlResume = e.nextInstruction + instruction.offset
 				}
 			}
-			if (!instructionAfterCatch) throw new Error('Expected Goto after synchronized body')
-			parseControlFlow(
-				instructions, exceptionTable,
-				instructionAfterCatch, end,
-				loopCounter, breaks, continues,
-				stack, block
-			)
+			if (controlResume === undefined) throw new Error('Expected Goto after synchronized body')
 		}
 	}
 	else if (firstControl === firstTryStart) {
@@ -444,20 +423,19 @@ function parseControlFlow(
 			}
 		}
 		const finallyCatch = firstTryCatches!.find(({clazz}) => !clazz)
-		let tryStatementEnd: number | undefined
 		if (finallyCatch) { //a finally clause
 			const catchPC = finallyCatch.pc
-			tryStatementEnd = end
+			controlResume = end
 			const beforeCatchIndex = preceding.get(catchPC)!
 			if (beforeCatchIndex >= firstTryEnd) {
 				const beforeCatch = instructions.get(beforeCatchIndex)!.instruction
-				if (beforeCatch instanceof Goto) tryStatementEnd = beforeCatchIndex + beforeCatch.offset
+				if (beforeCatch instanceof Goto) controlResume = beforeCatchIndex + beforeCatch.offset
 			}
 			const {pc, variable} = resolveExceptionStore(catchPC)
 			const finallyStack: Stack = []
 			const finallyBlock = parseControlFlow(
 				instructions, revisedExceptionTable,
-				pc, tryStatementEnd,
+				pc, controlResume,
 				loopCounter, breaks, continues,
 				finallyStack
 			)
@@ -471,7 +449,7 @@ function parseControlFlow(
 			const firstInstructionAfterTry = instructions.get(firstTryEnd)
 			if (firstInstructionAfterTry) {
 				const {instruction} = firstInstructionAfterTry
-				if (instruction instanceof Goto) tryStatementEnd = firstTryEnd + instruction.offset
+				if (instruction instanceof Goto) controlResume = firstTryEnd + instruction.offset
 			}
 			const handlerPCTypes = new Map<number, Class[]>()
 			for (const {pc, clazz} of firstTryCatches) {
@@ -484,16 +462,16 @@ function parseControlFlow(
 				const {pc, variable} = resolveExceptionStore(handlerPC)
 				function parseCatch(): Block {
 					let catchEnd: number
-					if (tryStatementEnd === undefined) catchEnd = end
+					if (controlResume === undefined) catchEnd = end
 					else {
-						catchEnd = tryStatementEnd
+						catchEnd = controlResume
 						for (let index = pc; index < catchEnd;) {
 							const instructionLength = instructions.get(index)
 							if (!instructionLength) throw new Error(`Missing instruction at ${index}`)
 							const {instruction, length} = instructionLength
 							if (instruction instanceof Goto) {
 								const target = index + instruction.offset
-								if (target === tryStatementEnd) catchEnd = index
+								if (target === controlResume) catchEnd = index
 							}
 							index += length
 						}
@@ -510,13 +488,13 @@ function parseControlFlow(
 						return catchBlock
 					}
 					catch (e) {
-						if (tryStatementEnd === undefined && e instanceof IfExceedsBoundsError) {
+						if (controlResume === undefined && e instanceof IfExceedsBoundsError) {
 							const jumpIndex = preceding.get(e.instructionAfterIf)!
 							const jump = instructions.get(jumpIndex)!.instruction
 							if (jump instanceof Goto) {
-								tryStatementEnd = jumpIndex + jump.offset
-								if (tryStatementEnd <= pc || tryStatementEnd > end) throw new Error('End of catches exceeds block')
-								return parseCatch() //try again with tryStatementEnd defined
+								controlResume = jumpIndex + jump.offset
+								if (controlResume <= pc || controlResume > end) throw new Error('End of catches exceeds block')
+								return parseCatch() //try again with controlResume defined
 							}
 						}
 						throw e
@@ -530,9 +508,11 @@ function parseControlFlow(
 			}
 			block.push(new TryStatement(tryBlock, catches))
 		}
+	}
+	if (controlResume !== undefined) {
 		parseControlFlow(
 			instructions, exceptionTable,
-			tryStatementEnd || end, end,
+			controlResume, end,
 			loopCounter, breaks, continues,
 			stack, block
 		)
