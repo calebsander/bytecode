@@ -27,7 +27,7 @@ const CONSTANT_MethodType = 16
 const CONSTANT_InvokeDynamic = 18
 
 interface PoolValueStruct {
-	[key: string]: PoolValue<any>
+	[key: string]: PoolValue<any> | ConstantValue<any>
 }
 export class ConstantPool {
 	private readonly pool: (ConstantValue<any> | PoolValueStruct | undefined)[]
@@ -36,10 +36,10 @@ export class ConstantPool {
 		this.pool = new Array(numConstants)
 	}
 
-	public setConstant(index: number, value: ConstantValue<any> | PoolValueStruct) {
+	setConstant(index: number, value: ConstantValue<any> | PoolValueStruct) {
 		this.pool[index] = value
 	}
-	public getConstant(index: number): any {
+	getConstant(index: number): any {
 		const rawValue = this.pool[index]
 		if (rawValue === undefined) throw new Error(`No constant at index ${index}`)
 		if (rawValue instanceof ConstantValue) return rawValue.getValue()
@@ -54,7 +54,10 @@ export class ConstantPool {
 class PoolValue<E> {
 	private value: E | undefined
 
-	constructor(private readonly pool: ConstantPool, private readonly index: number) {}
+	constructor(
+		private readonly pool: ConstantPool,
+		private readonly index: number
+	) {}
 
 	getValue(): E {
 		if (this.value === undefined) this.value = this.pool.getConstant(this.index)
@@ -64,7 +67,7 @@ class PoolValue<E> {
 class ConstantValue<E> {
 	constructor(private readonly value: E) {}
 
-	public getValue(): E {
+	getValue(): E {
 		return this.value
 	}
 }

@@ -41,7 +41,7 @@ export abstract class Instruction {
 	setLocalTypes(_: Map<number, LocalType>) {}
 }
 export abstract class LoadStoreInstruction extends Instruction {
-	constructor(public readonly n: number) { super() }
+	constructor(readonly n: number) { super() }
 	abstract readonly type: LocalType
 	setLocalTypes(types: Map<number, LocalType>) {
 		const {n, type} = this
@@ -113,8 +113,8 @@ abstract class InvokeInstruction extends Instruction {
 	private readonly doubleWidth: boolean
 	private readonly isBoolean: boolean
 	constructor(
-		public readonly className: string,
-		public readonly method: Ref
+		readonly className: string,
+		readonly method: Ref
 	) {
 		super()
 		const {descriptor} = method.nameAndType
@@ -159,8 +159,8 @@ abstract class NewArrayInstruction extends Instruction {
 	}
 }
 abstract class FieldInstruction extends Instruction {
-	public readonly clazz: Class
-	public readonly nameAndType: NameAndType
+	readonly clazz: Class
+	readonly nameAndType: NameAndType
 	protected readonly doubleWidth: boolean
 	protected readonly isBoolean: boolean
 	constructor({class: clazz, nameAndType}: Ref) {
@@ -265,8 +265,8 @@ export class AALoad extends ArrayLoadInstruction {}
 export class AAStore extends ArrayStoreInstruction {}
 export class ALoad extends LocalLoadInstruction {
 	constructor(
-		public readonly n: number,
-		public readonly isStatic: boolean
+		readonly n: number,
+		readonly isStatic: boolean
 	) { super(n) }
 	get type(): LocalType { return 'Object' }
 	execute(stack: Stack) {
@@ -275,7 +275,7 @@ export class ALoad extends LocalLoadInstruction {
 	}
 }
 export class ANewArray extends NewArrayInstruction {
-	constructor(public readonly clazz: Class) { super() }
+	constructor(readonly clazz: Class) { super() }
 	get name() { return this.clazz.name }
 	get primitive() { return false }
 }
@@ -303,7 +303,7 @@ export class BAStore extends ArrayStoreInstruction {}
 export class CALoad extends ArrayLoadInstruction {}
 export class CAStore extends ArrayStoreInstruction {}
 export class CheckCast extends Instruction {
-	public readonly clazz: Class
+	readonly clazz: Class
 	constructor(clazz: Class) {
 		super()
 		const {name} = clazz
@@ -317,7 +317,7 @@ export class D2F extends FloatCast {}
 export class D2I extends IntCast {}
 export class D2L extends LongCast {}
 export class DConst extends Instruction {
-	constructor(public readonly d: number) { super() }
+	constructor(readonly d: number) { super() }
 	execute(stack: Stack) {
 		stack.push(new FloatLiteral(this.d, true))
 	}
@@ -354,7 +354,7 @@ export class FAStore extends ArrayStoreInstruction {}
 export class FCmpL extends SubInstruction {} //not sure how to distinguish how they deal with NaN
 export class FCmpG extends SubInstruction {}
 export class FConst extends Instruction {
-	constructor(public readonly f: number) { super() }
+	constructor(readonly f: number) { super() }
 	execute(stack: Stack) {
 		stack.push(new FloatLiteral(this.f))
 	}
@@ -398,7 +398,7 @@ export class IALoad extends ArrayLoadInstruction {}
 export class IAnd extends AndInstruction {}
 export class IAStore extends ArrayStoreInstruction {}
 export class IConst extends Instruction {
-	constructor(public readonly i: number) { super() }
+	constructor(readonly i: number) { super() }
 	execute(stack: Stack) {
 		stack.push(new IntegerLiteral(this.i))
 	}
@@ -406,8 +406,8 @@ export class IConst extends Instruction {
 export class IDiv extends DivInstruction {}
 export class IInc extends Instruction {
 	constructor(
-		public readonly n: number,
-		public readonly i: number
+		readonly n: number,
+		readonly i: number
 	) { super() }
 	execute(_: Stack, block: Block) {
 		const variable = new Variable(this.n, false)
@@ -425,7 +425,7 @@ export class ILoad extends LocalLoadInstruction {
 export class IMul extends MulInstruction {}
 export class INeg extends NegInstruction {}
 export class InstanceOf extends Instruction {
-	constructor(public readonly clazz: Class) { super() }
+	constructor(readonly clazz: Class) { super() }
 	execute(stack: Stack) {
 		stack.push(new BinaryOperation(
 			'instanceof',
@@ -460,7 +460,7 @@ export class LAnd extends AndInstruction {}
 export class LAStore extends ArrayStoreInstruction {}
 export class LCmp extends SubInstruction {} //not precisely true, but this seems to be how javac uses it
 export class LConst extends Instruction {
-	constructor(public readonly l: bigint) { super() }
+	constructor(readonly l: bigint) { super() }
 	execute(stack: Stack) {
 		stack.push(new IntegerLiteral(this.l, true))
 	}
@@ -483,7 +483,7 @@ export class LSub extends SubInstruction {}
 export class LUShiftRight extends UShiftRightInstruction {}
 export class LXor extends XorInstruction {}
 export class LoadConstant extends Instruction {
-	constructor(public readonly constant: LiteralConstant) { super() }
+	constructor(readonly constant: LiteralConstant) { super() }
 	execute(stack: Stack) {
 		let exp: Expression
 		switch (this.constant.type) {
@@ -519,8 +519,8 @@ export class MonitorExit extends Instruction {
 }
 export class MultiANewArray extends Instruction {
 	constructor(
-		public readonly clazz: Class,
-		public readonly dimensions: number
+		readonly clazz: Class,
+		readonly dimensions: number
 	) {
 		super()
 		const name = getType(clazz.name)
@@ -536,13 +536,13 @@ export class MultiANewArray extends Instruction {
 	}
 }
 export class New extends Instruction {
-	constructor(public readonly clazz: Class) { super() }
+	constructor(readonly clazz: Class) { super() }
 	execute(stack: Stack) {
 		stack.push(new NewObject(this.clazz))
 	}
 }
 export class NewPrimitiveArray extends NewArrayInstruction {
-	constructor(public readonly name: Primitive) { super() }
+	constructor(readonly name: Primitive) { super() }
 	get primitive() { return true }
 }
 export class NoOp extends Instruction {
@@ -554,7 +554,7 @@ export class NullConst extends Instruction {
 	}
 }
 export class Pop extends Instruction {
-	constructor(public readonly n: number) { super() }
+	constructor(readonly n: number) { super() }
 	execute(stack: Stack, block: Block) {
 		let popped = 0
 		const expressions: Stack = []
@@ -599,7 +599,7 @@ export class Return extends Instruction {
 export class SALoad extends ArrayLoadInstruction {}
 export class SAStore extends ArrayStoreInstruction {}
 export class SPush extends Instruction {
-	constructor(public readonly i: number) { super() }
+	constructor(readonly i: number) { super() }
 	execute(stack: Stack) {
 		stack.push(new IntegerLiteral(this.i))
 	}
@@ -608,14 +608,14 @@ export class SPush extends Instruction {
 //Doesn't function much like a simple jump, so not subclassed from Jump
 export class SwitchInstruction extends Instruction {
 	constructor(
-		public readonly offsetMap: Map<number, number>,
-		public readonly defaultOffset: number
+		readonly offsetMap: Map<number, number>,
+		readonly defaultOffset: number
 	) { super() }
 	execute() { throw new Error('Cannot execute tableswitch or lookupswitch') }
 }
 //When executed, jumps push the expression under which they jump onto the stack
 export abstract class Jump extends Instruction {
-	constructor(public readonly offset: number) { super() }
+	constructor(readonly offset: number) { super() }
 }
 export abstract class IfCondition extends Jump {
 	protected abstract readonly jumpOp: BinaryOp

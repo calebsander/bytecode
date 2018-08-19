@@ -44,12 +44,12 @@ interface CatchType {
 
 class IfExceedsBoundsError extends Error {
 	constructor(
-		public readonly instructionAfterIf: number,
-		public readonly target: number
+		readonly instructionAfterIf: number,
+		readonly target: number
 	) { super('If statement exceeds block') }
 }
 class MonitorExitError extends Error {
-	constructor(public readonly nextInstruction: number) {
+	constructor(readonly nextInstruction: number) {
 		super('Cannot execute monitorexit')
 	}
 }
