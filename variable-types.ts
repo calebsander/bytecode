@@ -34,6 +34,5 @@ export function getLocalTypes(instructions: Code, localStartIndex: number): Map<
 		and recognizing interface types (e.g. something that gets assigned ArrayList and LinkedList is likely a List).
 		Could at least cast when objects are used in methods.
 	*/
-	// TODO: differentiate bool/char/short/int, which are all stored as int locals
 	return namedTypes
 }

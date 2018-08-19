@@ -3,6 +3,7 @@ import {
 	parseByteArray,
 	parseAndThen,
 	parseReturn,
+	parseSignedInt,
 	parseStruct,
 	parseTimes,
 	slice
@@ -65,7 +66,6 @@ const parseSignedByte = (data: DataView, offset: number) =>
 	({result: data.getInt8(offset), length: 1})
 const parseSignedShort = (data: DataView, offset: number) =>
 	({result: data.getInt16(offset), length: 2})
-const parseSignedInt = parseAndThen(parseInt, int => parseReturn(int | 0))
 const parseTableSwitch =
 	parseAndThen(parseSignedInt, defaultOffset =>
 		parseAndThen(parseSignedInt, low =>

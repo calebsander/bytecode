@@ -33,36 +33,38 @@ export const parseInt: Parser<number> = data => {
 		length: 4
 	}
 }
-export const parseByteArray: (lengthParser: Parser<number>) => Parser<ArrayBuffer> =
-	lengthParser =>
-		parseAndThen(lengthParser, bytes =>
-			data => ({
-				result: data.buffer.slice(data.byteOffset, data.byteOffset + bytes),
-				length: bytes
-			})
-		)
-export const parseTimes: <E>(parser: Parser<E>, n: number) => Parser<E[]> =
-	(parser, n) =>
-		n
-			? parseAndThen(parser, head =>
-					parseAndThen(parseTimes(parser, n - 1), tail =>
-						parseReturn([head, ...tail])
-					)
-				)
-			: parseReturn([])
-export const parseRepeated: <E>(parser: Parser<E>) => Parser<E[]> =
-	parser =>
-		parseAndThen(parseShort, count => parseTimes(parser, count))
-const parseStructFields: <E>(parsers: [keyof E, Parser<any>][], i: number) => Parser<E> =
-	<E>(parsers: [keyof E, Parser<any>][], i: number) => {
-		if (i === parsers.length) return parseReturn({} as E)
-		const [field, parser] = parsers[i]
-		return parseAndThen(parser, value =>
-			parseAndThen(parseStructFields(parsers, i + 1), rest => {
-				rest[field] = value
-				return parseReturn(rest)
-			})
-		)
+export const parseSignedInt: Parser<number> = data => {
+	return {
+		result: data.getInt32(0),
+		length: 4
 	}
-export const parseStruct: <E>(parsers: [keyof E, Parser<any>][]) => Parser<E> =
-	parsers => parseStructFields(parsers, 0)
+}
+export const parseByteArray = (lengthParser: Parser<number>): Parser<ArrayBuffer> =>
+	parseAndThen(lengthParser, bytes =>
+		data => ({
+			result: data.buffer.slice(data.byteOffset, data.byteOffset + bytes),
+			length: bytes
+		})
+	)
+export const parseTimes = <E>(parser: Parser<E>, n: number): Parser<E[]> => data => {
+	let length = 0
+	const result: E[] = []
+	while (n--) {
+		const parseResult = parser(slice(data, length))
+		length += parseResult.length
+		result.push(parseResult.result)
+	}
+	return {result, length}
+}
+export const parseRepeated = <E>(parser: Parser<E>): Parser<E[]> =>
+	parseAndThen(parseShort, count => parseTimes(parser, count))
+export const parseStruct = <E>(parsers: [keyof E, Parser<any>][]): Parser<E> => data => {
+	let length = 0
+	const result = {} as E
+	for (const [field, parser] of parsers) {
+		const parseResult = parser(slice(data, length))
+		length += parseResult.length
+		result[field] = parseResult.result
+	}
+	return {result, length}
+}

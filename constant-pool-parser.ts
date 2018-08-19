@@ -5,8 +5,8 @@ import {
 	parseReturn,
 	parseByteArray,
 	parseByte,
+	parseSignedInt,
 	parseShort,
-	parseInt,
 	slice
 } from './parse'
 import utf8Decode from './utf8-decode'
@@ -131,7 +131,6 @@ const STRING_PARSER: PoolValueParser<ReferencedValue<LiteralConstant>> = pool =>
 		entries: 1
 	}
 }
-const parseSignedInt = parseAndThen(parseInt, i => parseReturn(i | 0))
 const INTEGER_PARSER: PoolValueParser<ReferencedValue<LiteralConstant>> = _ => data => {
 	const {result, length} = parseSignedInt(data)
 	return {
@@ -153,15 +152,15 @@ const FLOAT_PARSER: PoolValueParser<ReferencedValue<LiteralConstant>> = _ => dat
 })
 const longParser = parseAndThen(parseSignedInt, upper =>
 	parseAndThen(parseSignedInt, lower =>
-		parseReturn({upper, lower})
+		parseReturn(BigInt(upper) << 32n | BigInt(lower))
 	)
 )
 const LONG_PARSER: PoolValueParser<ReferencedValue<LiteralConstant>> = _ => data => {
-	const {result: {upper, lower}, length} = longParser(data)
+	const {result, length} = longParser(data)
 	return {
 		result: {
 			type: new ConstantValue<'long'>('long'),
-			value: new ConstantValue(BigInt(upper) << 32n | BigInt(lower))
+			value: new ConstantValue(result)
 		},
 		length,
 		entries: 2
@@ -257,21 +256,22 @@ const INVOKE_DYNAMIC_PARSER: PoolValueParser<ReferencedValue<InvokeDynamic>> = p
 		entries: 1
 	}
 }
-const CONSTANT_PARSERS = new Map<number, PoolValueParser<ConstantValue<any> | {}>>()
-	.set(CONSTANT_Class, CLASS_PARSER)
-	.set(CONSTANT_Fieldref, REF_PARSER)
-	.set(CONSTANT_Methodref, REF_PARSER)
-	.set(CONSTANT_InterfaceMethodref, REF_PARSER)
-	.set(CONSTANT_String, STRING_PARSER)
-	.set(CONSTANT_Integer, INTEGER_PARSER)
-	.set(CONSTANT_Float, FLOAT_PARSER)
-	.set(CONSTANT_Long, LONG_PARSER)
-	.set(CONSTANT_Double, DOUBLE_PARSER)
-	.set(CONSTANT_NameAndType, NAME_AND_TYPE_PARSER)
-	.set(CONSTANT_Utf8, UTF8_PARSER)
-	.set(CONSTANT_MethodHandle, METHOD_HANDLE_PARSER)
-	.set(CONSTANT_MethodType, METHOD_TYPE_PARSER)
-	.set(CONSTANT_InvokeDynamic, INVOKE_DYNAMIC_PARSER)
+const CONSTANT_PARSERS = new Map<number, PoolValueParser<any>>([
+	[CONSTANT_Class, CLASS_PARSER],
+	[CONSTANT_Fieldref, REF_PARSER],
+	[CONSTANT_Methodref, REF_PARSER],
+	[CONSTANT_InterfaceMethodref, REF_PARSER],
+	[CONSTANT_String, STRING_PARSER],
+	[CONSTANT_Integer, INTEGER_PARSER],
+	[CONSTANT_Float, FLOAT_PARSER],
+	[CONSTANT_Long, LONG_PARSER],
+	[CONSTANT_Double, DOUBLE_PARSER],
+	[CONSTANT_NameAndType, NAME_AND_TYPE_PARSER],
+	[CONSTANT_Utf8, UTF8_PARSER],
+	[CONSTANT_MethodHandle, METHOD_HANDLE_PARSER],
+	[CONSTANT_MethodType, METHOD_TYPE_PARSER],
+	[CONSTANT_InvokeDynamic, INVOKE_DYNAMIC_PARSER],
+])
 
 export const constantPoolParser: Parser<ConstantPool> =
 	parseAndThen(parseShort, numConstants =>
