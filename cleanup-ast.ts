@@ -22,6 +22,7 @@ import {
 	FunctionCall,
 	IfStatement,
 	IntegerLiteral,
+	NameReference,
 	NewArray,
 	NewObject,
 	replaceBlock,
@@ -73,7 +74,7 @@ interface MethodContext {
 type CleanupStrategy = (context: MethodContext) => (block: Block) => Replacements
 
 const removeTrailingReturn: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	const [lastStatement] = block.slice(-1)
 	if (lastStatement instanceof ReturnStatement && !lastStatement.exp) {
 		replacements.set(lastStatement, [])
@@ -81,7 +82,7 @@ const removeTrailingReturn: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const avoidEmptyIfBlock: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof IfStatement) {
 			const {cond, ifBlock, elseBlock} = statement
@@ -155,7 +156,7 @@ const avoidDoubleCast: CleanupStrategy = _ => block => {
 	return {expressions: replacements, statements: new Map}
 }
 const identifyDoWhileCondition: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof WhileStatement) {
 			const {doWhile, cond, block, label} = statement
@@ -188,7 +189,7 @@ const identifyDoWhileCondition: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const trueDoWhileToWhile: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof WhileStatement) {
 			const {cond, block, doWhile, label} = statement
@@ -205,7 +206,7 @@ const trueDoWhileToWhile: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const identifyWhileCondition: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof WhileStatement) {
 			const {doWhile, cond, block, label} = statement
@@ -229,7 +230,7 @@ const identifyWhileCondition: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const resolveTrueIfCondition: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof IfStatement) {
 			const {cond, ifBlock, elseBlock} = statement
@@ -239,7 +240,7 @@ const resolveTrueIfCondition: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const collapseCasesWithDefault: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof SwitchStatement) {
 			const {val, cases, label} = statement
@@ -259,7 +260,7 @@ const collapseCasesWithDefault: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const identifyStringSwitch: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlocks(block, block => {
 		testIndex: for (let i = 0; i < block.length; i++) {
 			const [valAssignment, indexInit, hashSwitch, indexSwitch] = block.slice(i, i + 4)
@@ -351,7 +352,7 @@ const shorthandAssignments: CleanupStrategy = _ => block => {
 	return {expressions: replacements, statements: new Map}
 }
 const combineCatchFinally: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof TryStatement) {
 			const {tryBlock, catches} = statement
@@ -373,7 +374,7 @@ const combineCatchFinally: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const removeFinallyThrow: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlockStatements(block, statement => {
 		if (statement instanceof TryStatement) {
 			for (const {types, variable, block} of statement.catches) {
@@ -392,7 +393,7 @@ const removeFinallyThrow: CleanupStrategy = _ => block => {
 	return {expressions: new Map, statements: replacements}
 }
 const identifyForInArray: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlocks(block, block => {
 		for (let i = 0; i < block.length; i++) {
 			const [getLength, initIndex, loop] = block.slice(i, i + 3)
@@ -431,6 +432,7 @@ const identifyForInArray: CleanupStrategy = _ => block => {
 				.set(getLength, [])
 				.set(initIndex, [])
 				.set(loop, [new ForInStatement(
+					{name: 'java/lang/Object'}, //TODO: figure out actual type
 					loopVar,
 					obj,
 					loopBlock.slice(1, -1), //omit loopVar = obj[indexVar] and ++indexVar
@@ -442,7 +444,7 @@ const identifyForInArray: CleanupStrategy = _ => block => {
 }
 const identifyForInIterable: CleanupStrategy = _ => block => {
 	const expressions = new Map<Expression, Expression>()
-	const statements = new Map<Statement, Statement[]>()
+	const statements = new Map<Statement, Block>()
 	walkBlocks(block, block => {
 		for (let i = 0; i < block.length; i++) {
 			const [getIterator, loop] = block.slice(i, i + 2)
@@ -459,12 +461,17 @@ const identifyForInIterable: CleanupStrategy = _ => block => {
 			if (!(iterator instanceof Variable && lhs.n === iterator.n && hasNext && hasNext.name === 'hasNext' && !cond.args.length)) continue
 			let iteratorOccurrences = 0
 			let iteratorNext: Expression | undefined
+			let elementType: NameReference
 			walkBlockExpressions(loopBlock, expression => {
 				if (expression instanceof Variable && expression.n === lhs.n) iteratorOccurrences++
-				else if (expression instanceof FunctionCall) {
-					const {obj, func, args} = expression
-					if (obj instanceof Variable && obj.n === lhs.n && func && func.name === 'next' && !args.length) {
-						iteratorNext = expression
+				else if (expression instanceof Cast) {
+					const {type, exp, primitive} = expression
+					if (!primitive && exp instanceof FunctionCall) {
+						const {obj, func, args} = exp
+						if (obj instanceof Variable && obj.n === lhs.n && func && func.name === 'next' && !args.length) {
+							iteratorNext = expression
+							elementType = type
+						}
 					}
 				}
 			})
@@ -472,27 +479,27 @@ const identifyForInIterable: CleanupStrategy = _ => block => {
 				expressions.set(iteratorNext, lhs)
 				statements
 					.set(getIterator, [])
-					.set(loop, [new ForInStatement(lhs, obj, loopBlock, label)])
+					.set(loop, [new ForInStatement(elementType!, lhs, obj, loopBlock, label)])
 			}
 		}
 	})
 	return {expressions, statements}
 }
 const removeForInTempVar: CleanupStrategy = _ => block => {
-	const replacements = new Map<Statement, Statement[]>()
+	const replacements = new Map<Statement, Block>()
 	walkBlocks(block, block => {
 		for (let i = 0; i < block.length; i++) {
 			const [initializer, forIn] = block.slice(i, i + 2)
 			if (initializer instanceof ExpressionStatement && forIn instanceof ForInStatement) {
 				const {exp} = initializer
 				if (exp instanceof Assignment) {
-					const {lhs, rhs} = exp
-					if (lhs instanceof Variable) {
-						const {variable, iterable, block, label} = forIn
+					const {op, lhs, rhs} = exp
+					if (!op && lhs instanceof Variable) {
+						const {type, variable, iterable, block, label} = forIn
 						if (iterable instanceof Variable && lhs.n === iterable.n) {
 							replacements
 								.set(initializer, [])
-								.set(forIn, [new ForInStatement(variable, rhs, block, label)])
+								.set(forIn, [new ForInStatement(type, variable, rhs, block, label)])
 						}
 					}
 				}
@@ -686,20 +693,21 @@ export function convertClassString(clazz: string, imports: Set<string>) {
 	return clazzName
 }
 export function resolvePackageClasses(block: Block, imports: Set<string>): Block {
-	const replacements = new Map<Expression, Expression>()
+	const expressions = new Map<Expression, Expression>()
+	const statements = new Map<Statement, Block>()
 	walkBlockExpressions(block, expression => {
 		if (expression instanceof ClassLiteral) {
-			replacements.set(expression, new ClassLiteral({
+			expressions.set(expression, new ClassLiteral({
 				name: convertClassString(expression.clazz.name, imports)
 			}))
 		}
 		else if (expression instanceof ClassReference) {
-			replacements.set(expression, new ClassReference({
+			expressions.set(expression, new ClassReference({
 				name: convertClassString(expression.clazz.name, imports)
 			}))
 		}
 		else if (expression instanceof NewObject) {
-			replacements.set(expression, new NewObject(
+			expressions.set(expression, new NewObject(
 				{name: convertClassString(expression.clazz.name, imports)},
 				expression.args
 			))
@@ -707,7 +715,7 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 		else if (expression instanceof NewArray) {
 			const {type, dimensions, primitive, elements} = expression
 			if (!primitive) {
-				replacements.set(expression, new NewArray(
+				expressions.set(expression, new NewArray(
 					{name: convertClassString(type.name, imports)},
 					dimensions,
 					primitive,
@@ -718,7 +726,7 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 		else if (expression instanceof Cast) {
 			const {type, exp, primitive} = expression
 			if (!primitive) {
-				replacements.set(expression, new Cast(
+				expressions.set(expression, new Cast(
 					{name: convertClassString(type.name, imports)},
 					exp,
 					primitive
@@ -726,7 +734,19 @@ export function resolvePackageClasses(block: Block, imports: Set<string>): Block
 			}
 		}
 	})
-	return replaceBlock(block, {expressions: replacements, statements: new Map})
+	walkBlockStatements(block, statement => {
+		if (statement instanceof ForInStatement) {
+			const {type, variable, iterable, block, label} = statement
+			statements.set(statement, [new ForInStatement(
+				{name: convertClassString(type.name, imports)},
+				variable,
+				iterable,
+				block,
+				label
+			)])
+		}
+	})
+	return replaceBlock(block, {expressions, statements})
 }
 
 export function getUsedVariables(block: Block) {

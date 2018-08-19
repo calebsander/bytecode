@@ -239,7 +239,7 @@ export class Assignment extends Expression {
 		return omitParens ? insideParens : `(${insideParens})`
 	}
 }
-interface NameReference {
+export interface NameReference {
 	readonly name: string
 }
 export class ClassReference extends PrimitiveExpression {
@@ -427,7 +427,7 @@ export type StatementHandler = (statement: Statement) => void
 export type BlockHandler = (block: Block) => void
 export interface Replacements {
 	expressions: Map<Expression, Expression>
-	statements: Map<Statement, Statement[]>
+	statements: Map<Statement, Block>
 }
 
 export abstract class Statement {
@@ -606,6 +606,7 @@ export class WhileStatement extends LabeledStatement {
 }
 export class ForInStatement extends LabeledStatement {
 	constructor(
+		public readonly type: NameReference,
 		public readonly variable: Variable,
 		public readonly iterable: Expression,
 		public readonly block: Block,
@@ -622,6 +623,7 @@ export class ForInStatement extends LabeledStatement {
 	replace(replacements: Replacements) {
 		const {expressions} = replacements
 		return new ForInStatement(
+			this.type,
 			this.variable,
 			(expressions.get(this.iterable) || this.iterable).replace(expressions),
 			replaceBlock(this.block, replacements),
@@ -631,7 +633,7 @@ export class ForInStatement extends LabeledStatement {
 	toSections() {
 		const blockSections = blockToSections(this.block, this.label)
 		const forCond: string = (isLabelNeeded(this) ? this.label.label + ': ' : '') +
-			`for (${this.variable.toString()} : ${this.iterable.toString(true)}) `
+			`for (${this.type.name} ${this.variable.toString()} : ${this.iterable.toString(true)}) `
 		return blockSections.length === 1
 			? [forCond + blockSections[0]]
 			: [

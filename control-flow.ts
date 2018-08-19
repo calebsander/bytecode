@@ -126,20 +126,20 @@ function parseControlFlow(
 	    firstTryCatches: CatchType[]
 	for (const {startPC, endPC, handlerPC, catchType} of exceptionTable) {
 		if (startPC < start || endPC > end) continue
+		let earlierCatch = false
 		let addCatchType = false
 		if (startPC < firstTryStart) {
 			firstTryStart = startPC
+			earlierCatch = true
+		}
+		else if (startPC === firstTryStart) {
+			if (endPC > firstTryEnd!) earlierCatch = true
+			else if (endPC === firstTryEnd) addCatchType = true
+		}
+		if (earlierCatch) {
 			firstTryEnd = endPC
 			firstTryCatches = []
 			addCatchType = true
-		}
-		else if (startPC === firstTryStart) {
-			if (endPC > firstTryEnd!) {
-				firstTryEnd = endPC
-				firstTryCatches = []
-				addCatchType = true
-			}
-			else if (endPC === firstTryEnd) addCatchType = true
 		}
 		if (addCatchType) firstTryCatches!.push({pc: handlerPC, clazz: catchType})
 	}

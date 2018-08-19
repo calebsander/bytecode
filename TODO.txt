@@ -1,7 +1,5 @@
 Fix old-fashioned for loops with continues
 
-Add type to for-in loop to make it valid Java
-
 CleanupStrategy to identify for (var; var BinaryOp exp; UnaryOp exp)
 
 Identify object types based on function calls
